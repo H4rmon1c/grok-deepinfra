@@ -143,6 +143,9 @@ pub async fn run_command_hook(
     // Detach from the controlling terminal so children (e.g. GPG pinentry)
     // can't open /dev/tty and corrupt the TUI display.
     xai_grok_tools::util::detach_command(&mut cmd);
+    // Hooks are arbitrary helper processes, not samplers. Remove accidental
+    // inheritance before applying trusted, explicit hook `extra_env` below.
+    xai_grok_tools::util::scrub_openai_api_key(&mut cmd);
 
     // Spawn the child process.
     //

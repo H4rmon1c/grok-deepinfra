@@ -119,12 +119,13 @@ mod tests {
     ///
     /// Uses `GROK_AUTH_PATH` (not `GROK_HOME`) so a OnceLock-cached real home
     /// with `auth.json` cannot leak into these tests.
-    fn isolate_auth_sources() -> (tempfile::TempDir, [EnvGuard; 7]) {
+    fn isolate_auth_sources() -> (tempfile::TempDir, [EnvGuard; 8]) {
         let dir = tempfile::tempdir().unwrap();
         let auth_path = dir.path().join("no-auth.json");
         let guards = [
             EnvGuard::unset(XAI_API_KEY_ENV_VAR),
             EnvGuard::unset(LEGACY_XAI_API_KEY_ENV_VAR),
+            EnvGuard::unset("OPENAI_API_KEY"),
             EnvGuard::unset("GROK_AUTH"),
             EnvGuard::set("GROK_AUTH_PATH", auth_path.to_str().unwrap()),
             EnvGuard::unset("GROK_DEPLOYMENT_KEY"),

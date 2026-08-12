@@ -3,6 +3,19 @@ use crate::attribution::{SharedAttributionCallback, ToolConsumer};
 use crate::types::SharedApiKeyProvider;
 use async_openai::types::responses as rs;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
+/// A live bearer provider can refresh xAI sessions, but must never override a
+/// key declared for another provider's endpoint.
+fn accepts_live_xai_bearer(base_url: &str) -> bool {
+    let Ok(url) = url::Url::parse(base_url) else {
+        return false;
+    };
+    if url.scheme() != "https" {
+        return false;
+    }
+    url.host_str().is_some_and(|host| {
+        host == "x.ai" || host.ends_with(".x.ai") || host == "cli-chat-proxy.grok.com"
+    })
+}
 /// A minimal, purpose-built HTTP client for calling the Responses API
 /// with web search capability.
 #[derive(Clone)]
@@ -37,6 +50,10 @@ impl WebSearchClient {
                 "Cannot create WebSearchClient from disabled config".to_string(),
             ));
         };
+        // The live provider exists to refresh xAI session credentials. Never
+        // let it replace a third-party config key (for example, an OpenAI key)
+        // on another provider's endpoint.
+        let api_key_provider = api_key_provider.filter(|_| accepts_live_xai_bearer(base_url));
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         headers.insert(
@@ -124,8 +141,6 @@ impl WebSearchClient {
             .input(query.to_string())
             .tools(vec![rs::Tool::WebSearch(web_search)])
             .store(false)
-            .temperature(0.1)
-            .top_p(0.95)
             .max_output_tokens(8192u32)
             .build()
             .map_err(|e| {
@@ -215,8 +230,6 @@ impl WebSearchClient {
             .input(query.to_string())
             .tools(vec![rs::Tool::WebSearch(web_search)])
             .store(false)
-            .temperature(0.1)
-            .top_p(0.95)
             .max_output_tokens(8192u32)
             .build()
             .map_err(|e| {
@@ -345,6 +358,18 @@ fn extract_citation_pairs(response: &rs::Response) -> Vec<(String, String)> {
 mod tests {
     use super::*;
     use indexmap::IndexMap;
+    #[test]
+    fn live_bearer_is_scoped_to_xai_https_endpoints() {
+        assert!(accepts_live_xai_bearer("https://api.x.ai/v1"));
+        assert!(accepts_live_xai_bearer(
+            "https://cli-chat-proxy.grok.com/v1"
+        ));
+        assert!(!accepts_live_xai_bearer("https://api.openai.com/v1"));
+        assert!(!accepts_live_xai_bearer("http://api.x.ai/v1"));
+        assert!(!accepts_live_xai_bearer(
+            "https://api.x.ai.attacker.example/v1"
+        ));
+    }
     /// Helper to create a Response from JSON for testing.
     fn response_from_json(json: serde_json::Value) -> rs::Response {
         serde_json::from_value(json).expect("Failed to parse test Response JSON")
@@ -673,9 +698,10 @@ mod tests {
             .expect("search must succeed with static key fallback");
         assert_eq!(content, "search result");
     }
-    /// When the provider returns a fresh key, it overrides the static one.
+    /// A live provider is scoped to xAI endpoints; a third-party endpoint must
+    /// retain the key baked into its model config.
     #[tokio::test]
-    async fn provider_key_overrides_static_key() {
+    async fn third_party_endpoint_keeps_static_key() {
         use wiremock::matchers::{header, method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
         struct FreshProvider;
@@ -687,7 +713,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/responses"))
-            .and(header("Authorization", "Bearer fresh-key-from-provider"))
+            .and(header("Authorization", "Bearer openai-key-from-config"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "id": "resp_test",
                 "object": "response",
@@ -709,7 +735,7 @@ mod tests {
             .mount(&server)
             .await;
         let config = WebSearchConfig::Enabled {
-            api_key: "stale-static-key".to_string(),
+            api_key: "openai-key-from-config".to_string(),
             base_url: server.uri(),
             model: "test-model".to_string(),
             extra_headers: IndexMap::new(),
@@ -720,7 +746,7 @@ mod tests {
         let (content, _citations) = client
             .search("test query", None)
             .await
-            .expect("search must succeed with provider key");
+            .expect("search must use the endpoint-scoped key");
         assert_eq!(content, "fresh result");
     }
     #[test]

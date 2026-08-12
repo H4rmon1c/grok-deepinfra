@@ -6,7 +6,7 @@ Grok connects to custom model endpoints for alternative providers, self-hosted m
 
 ## Default Models
 
-By default, Grok uses models hosted by SpaceXAI, and new sessions start with `grok-4.5`. Default models require no configuration. Authenticate with `grok login` or an API key, then start a session.
+This fork connects directly to OpenAI's Responses API, and new sessions start with `gpt-5.6`. The bundled models require no TOML configuration: export `OPENAI_API_KEY` with an OpenAI Platform API key, then start a session. A ChatGPT login or subscription is not an API key.
 
 List all available models:
 
@@ -21,7 +21,7 @@ grok models
 ### CLI Flag
 
 ```bash
-grok -p "Hello" -m grok-build
+grok -p "Hello" -m gpt-5.6
 ```
 
 ### Slash Command
@@ -29,13 +29,13 @@ grok -p "Hello" -m grok-build
 In the TUI, switch models during a session:
 
 ```
-/model grok-build
+/model gpt-5.6
 ```
 
 Or use the alias:
 
 ```
-/m grok-build
+/m gpt-5.6
 ```
 
 ### Model Picker (Ctrl+M)
@@ -48,7 +48,7 @@ Set a persistent default in `~/.grok/config.toml`:
 
 ```toml
 [models]
-default = "grok-4.5"
+default = "gpt-5.6"
 ```
 
 ---
@@ -99,6 +99,10 @@ Grok resolves the API key in this order:
 2. The environment variable(s) named by `env_key` — a single string or an array of names. The first set, non-empty value wins (for example `env_key = ["ANTHROPIC_AUTH_TOKEN", "LC_ANTHROPIC_AUTH_TOKEN"]` for SSH `LC_*` forwarding)
 3. Your signed-in session token (from `grok login`), for a model with no `api_key`/`env_key` of its own
 4. The `XAI_API_KEY` environment variable (global fallback; Grok also accepts `GROK_CODE_XAI_API_KEY` for backward compatibility)
+
+If a model declares `env_key` but none of those environment variables contain
+a value, resolution stops with no credential. It does not forward a session or
+global xAI key to that provider endpoint.
 
 ### Context Window
 
@@ -171,11 +175,13 @@ You can override specific fields of built-in models without redefining everythin
 
 ```toml
 # Override only the API key for a default model
-[model.grok-build]
-api_key = "my-api-key"
+[model.gpt-5.6]
+env_key = "MY_OPENAI_API_KEY"
+```
 
+```toml
 # Override temperature and add a custom API key
-[model.grok-build]
+[model.gpt-5.6]
 temperature = 0.5
 api_key = "sk-custom"
 ```
@@ -222,16 +228,22 @@ env_key = "OPENAI_API_KEY"
 
 ### OpenAI (Responses API)
 
-If your provider supports the newer Responses API:
+The bundled GPT-5.6 profiles in this fork already use the Responses API and
+`OPENAI_API_KEY`; no `config.toml` entry is required. To add another OpenAI
+model explicitly:
 
 ```toml
-[model.gpt-4o-responses]
-model = "gpt-4o"
+[model.my-openai-model]
+model = "gpt-5.6"
 base_url = "https://api.openai.com/v1"
-name = "GPT-4o (Responses)"
+name = "My OpenAI Model"
 api_backend = "responses"
 env_key = "OPENAI_API_KEY"
+context_window = 1050000
 ```
+
+`OPENAI_API_KEY` must contain an OpenAI Platform API key. ChatGPT subscriptions
+and browser/session tokens cannot authenticate API requests.
 
 ### Ollama (Local Models)
 
@@ -315,13 +327,13 @@ The `web_search` tool uses a separate model. Configure it with:
 
 ```toml
 [models]
-web_search = "grok-4.5"
+web_search = "gpt-5.6"
 ```
 
 Or via environment variable:
 
 ```bash
-export GROK_WEB_SEARCH_MODEL="grok-4.5"
+export GROK_WEB_SEARCH_MODEL="gpt-5.6"
 ```
 
 If you point web search at a custom model, you also need a `[model.*]` entry so Grok can reach it. Server-side ("backend") web search runs only when the model sets `supports_backend_search = true` (and the build enables backend search); it does not depend on `api_backend`:

@@ -1,6 +1,6 @@
 # Getting Started
 
-Grok Build is a terminal-based AI coding assistant from SpaceXAI. It runs as a TUI (Terminal User Interface) that understands your codebase, executes shell commands, edits files, searches the web, and manages tasks.
+This repository is an unofficial OpenAI-first fork of Grok Build, a terminal-based AI coding assistant. It runs as a TUI (Terminal User Interface) that understands your codebase, executes shell commands, edits files, searches the web, and manages tasks.
 
 You can use it interactively as a full-screen TUI, run it headlessly for scripting and CI/CD, or integrate it into editors via the Agent Client Protocol (ACP).
 
@@ -8,62 +8,51 @@ You can use it interactively as a full-screen TUI, run it headlessly for scripti
 
 ## Installation
 
-Install the latest stable release (macOS, Linux, or Windows via Git Bash):
+Clone the fork, enter its directory, and build it with the included launcher:
 
 ```bash
-curl -fsSL https://x.ai/cli/install.sh | bash
+git clone grok-build-openai.bundle grok-build-openai
+cd grok-build-openai
+export OPENAI_API_KEY="sk-..."
+./grok-openai
 ```
 
-Install a specific version:
+Replace the bundle filename with the fork's Git URL when it is hosted online.
+The launcher requires Rust and DotSlash, builds the pinned source with
+`cargo --locked`, and keeps fork state under `~/.grok-openai` by default.
+See the root [README](../../../../../README.md) for complete build requirements.
+
+To build manually:
 
 ```bash
-curl -fsSL https://x.ai/cli/install.sh | bash -s 0.1.42
+cargo build --locked --release -p xai-grok-pager-bin
+export OPENAI_API_KEY="sk-..."
+GROK_DISABLE_AUTOUPDATER=1 ./target/release/xai-grok-pager
 ```
 
-On **Windows (PowerShell)**, use the native PowerShell installer:
+Do not use the upstream binary installer for this fork: it installs the
+official Grok binary instead. The fork's upstream auto-updater is disabled;
+update the clone with Git and rebuild.
 
-```powershell
-irm https://x.ai/cli/install.ps1 | iex
-```
-
-Install a specific version:
-
-```powershell
-$env:GROK_VERSION="0.1.42"; irm https://x.ai/cli/install.ps1 | iex
-```
-
-The PowerShell installer automatically adds `%USERPROFILE%\.grok\bin` to your User PATH. Alternatively, install via [Git for Windows](https://gitforwindows.org/) (Git Bash) or MSYS2 using the bash script above. WSL users get the Linux binary automatically.
-
-Verify the installation:
-
-```bash
-grok --version
-```
-
-Update to the latest version at any time:
-
-```bash
-grok update
-```
+The examples below use `grok` as shorthand. When the launcher is not on your
+`PATH` under that name, substitute the absolute path to your clone's
+`grok-openai` script. Launcher configuration lives in `$GROK_HOME`, which
+defaults to `~/.grok-openai`.
 
 ---
 
 ## First Launch
 
-Start Grok by running:
+Start the fork by running:
 
 ```bash
-grok
+export OPENAI_API_KEY="sk-..."
+./grok-openai
 ```
 
-On first launch, Grok opens your browser to authenticate with grok.com. After you sign in, Grok stores your credentials in `~/.grok/auth.json`, where they persist across sessions. Grok refreshes your credentials automatically and prompts you to sign in again when they can no longer be renewed.
-
-If you prefer API key authentication (e.g., for CI/CD or environments without a browser), set the `XAI_API_KEY` environment variable instead:
-
-```bash
-export XAI_API_KEY="xai-..."
-grok
-```
+`OPENAI_API_KEY` must be an OpenAI Platform API key. A ChatGPT subscription,
+ChatGPT login, browser session, or session token cannot authenticate the API.
+The fork never includes a key and fails closed if the variable is missing.
 
 See [Authentication](02-authentication.md) for the full set of auth options including OIDC, external auth providers, and device code flow.
 
@@ -151,7 +140,7 @@ Tools can be extended with [MCP servers](05-configuration.md#mcp-servers) for in
 Type `/` in the prompt to access commands. These provide quick actions without writing a full prompt:
 
 ```
-/model grok-build                 # Switch model
+/model gpt-5.6                    # Switch model
 /compact                          # Compress conversation history
 /always-approve                   # Toggle always-approve mode
 /new                              # Start a new session
@@ -185,8 +174,8 @@ grok --rules "Always use TypeScript. Prefer functional components."
 # Auto-approve all tool executions
 grok --yolo
 
-# Use a specific model
-grok -m grok-build
+# Use a specific bundled model
+./grok-openai -m gpt-5.6-terra
 
 # Resume a previous session
 grok --resume <session-id>

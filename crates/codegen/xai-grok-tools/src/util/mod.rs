@@ -22,7 +22,10 @@ pub use command_display::strip_redundant_session_cd;
 #[cfg(unix)]
 pub use env::detach_from_tty;
 pub use env::substitute_plugin_tokens;
-pub use env::{GROK_AGENT_ENV, GROK_AGENT_ENV_VALUE, apply_grok_agent_marker, pager_env};
+pub use env::{
+    GROK_AGENT_ENV, GROK_AGENT_ENV_VALUE, OPENAI_API_KEY_ENV, apply_grok_agent_marker, pager_env,
+    scrub_openai_api_key, scrub_openai_api_key_std,
+};
 pub use fs::{UnicodePathMatch, canonicalize_with_timeout, try_resolve_unicode_filename};
 pub use grok_home::{grok_application, grok_home};
 pub use path_suggestions::format_not_found_error;

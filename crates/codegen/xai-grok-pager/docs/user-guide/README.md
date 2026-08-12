@@ -1,6 +1,10 @@
-# Grok Build User Guide
+# Grok Build for OpenAI User Guide
 
-Learn how to install, configure, and extend Grok Build, the terminal-based AI coding assistant from SpaceXAI.
+Learn how to install, configure, and extend this unofficial OpenAI-first fork
+of Grok Build. Checkout users run `./grok-openai`; examples that use `grok`
+assume you have placed that launcher on `PATH` under that shorter name. The
+launcher sets `GROK_HOME=~/.grok-openai` by default, so read `~/.grok` in
+inherited reference sections as `$GROK_HOME` when using the launcher.
 
 ---
 

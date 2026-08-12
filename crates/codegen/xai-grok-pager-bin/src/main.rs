@@ -2345,17 +2345,10 @@ fn build_update_config() -> UpdateConfig {
     }
     config
 }
-/// Central gate for auto-update checks; add new suppression rules here,
-/// not at call sites.
-fn should_check_for_updates(no_auto_update_flag: bool) -> bool {
-    if cfg!(debug_assertions) {
-        return false;
-    }
-    if no_auto_update_flag {
-        return false;
-    }
-    !std::env::var_os("GROK_DISABLE_AUTOUPDATER")
-        .is_some_and(|v| env_flag_enabled(&v.to_string_lossy()))
+/// Fork builds are updated from Git. The upstream updater installs official
+/// Grok binaries, which would replace this fork's OpenAI defaults.
+fn should_check_for_updates(_no_auto_update_flag: bool) -> bool {
+    false
 }
 /// Gate for the stdio agent's background auto-update: only the direct stdio
 /// agent, from the managed install. Other modes update in `run_agent_command`.
@@ -2850,6 +2843,11 @@ mod tests {
             !stdio_auto_update_enabled(true, false, true, false),
             "pinned binary"
         );
+    }
+    #[test]
+    fn openai_fork_never_runs_the_upstream_auto_updater() {
+        assert!(!should_check_for_updates(false));
+        assert!(!should_check_for_updates(true));
     }
     use clap::Parser as _;
     /// `grok dashboard` flags the startup hook without forcing leader mode —

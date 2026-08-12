@@ -119,7 +119,9 @@ fn wrap_command(command: &str) -> Result<String, ComputerError> {
     }
     #[cfg(unix)]
     {
-        let quoted = shlex::try_quote(command).map_err(|_| ComputerError::CommandNotQuoted)?;
+        let scrubbed_command = format!("unset OPENAI_API_KEY; {command}");
+        let quoted =
+            shlex::try_quote(&scrubbed_command).map_err(|_| ComputerError::CommandNotQuoted)?;
         Ok(format!(
             "{} -lc {quoted}",
             crate::terminal::default_shell_path()
@@ -128,7 +130,7 @@ fn wrap_command(command: &str) -> Result<String, ComputerError> {
 }
 
 fn to_env(env: HashMap<String, String>) -> Vec<acp::EnvVariable> {
-    env.into_iter()
+    super::scrub_sampler_credentials_from_env(env)
         .map(|(name, value)| acp::EnvVariable::new(name, value))
         .collect()
 }

@@ -112,14 +112,16 @@ Rename the current session. Alias: `/title`.
 Switch models. Accepts a model ID or display name (case-insensitive), and for reasoning models you can add an effort level as a second argument. Alias: `/m`.
 
 ```
-/model grok-build
-/model Grok Build
-/model Reasoning X high
+/model gpt-5.6
+/model GPT-5.6 Terra
+/model gpt-5.6 high
 ```
 
 ### `/effort <level>`
 
-Set reasoning effort on the **current** model without reselecting it. Levels are `low`, `medium`, `high`, and `xhigh`, and it only applies when the active model supports reasoning effort.
+Set reasoning effort on the **current** model without reselecting it. The bundled
+GPT-5.6 profiles advertise `none`, `low`, `medium`, `high`, `xhigh`, and `max`;
+custom models may advertise a different subset.
 
 ```
 /effort high

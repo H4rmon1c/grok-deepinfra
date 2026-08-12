@@ -193,10 +193,10 @@ struct SuggestPromptRequest {
     #[serde(default)]
     session_id: Option<String>,
     /// Client hint for the suggestion model (the pager sends its env
-    /// override, or `grok-build-0.1` when its catalog offers it). One tier
+    /// override, or `gpt-5.6-luna` when its catalog offers it). One tier
     /// of the shell-side resolution in
     /// `prompt_suggest::effective_suggest_model`: env > config.toml > remote
-    /// > this hint > `grok-build-0.1` default, catalog-guarded (a
+    /// > this hint > `gpt-5.6-luna` default, catalog-guarded (a
     /// non-sampleable effective model skips the request; the session model
     /// is never used).
     #[serde(default)]

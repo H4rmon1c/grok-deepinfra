@@ -1,5 +1,12 @@
 # Grok
 
+> **Upstream architecture reference:** the installation and xAI authentication
+> sections below describe the original provider paths retained for
+> compatibility. Users of this repository's OpenAI-first fork should start at
+> the root [`README.md`](../../../README.md), export an OpenAI Platform
+> `OPENAI_API_KEY`, and run `./grok-openai`. The bundled default is `gpt-5.6`,
+> not the upstream model examples in this document.
+
 A terminal-based AI coding assistant and agentic harness.
 
 Use it interactively as a TUI, or integrate it into your own apps via headless mode and the Agent Client Protocol (ACP).
@@ -1335,11 +1342,11 @@ Each feature section below documents its own config. This section covers the gen
 
 ```toml
 [cli]
-auto_update = true                     # check for updates on launch
+auto_update = false                    # fork updates through Git
 
 [models]
-default = "grok-4.5"                   # model used for new sessions
-web_search = "grok-4.5"                # model used by the web_search tool
+default = "gpt-5.6"                    # model used for new sessions
+web_search = "gpt-5.6"                 # model used by the web_search tool
 
 [ui]
 max_thoughts_width = 120               # max column width for reasoning display
@@ -1824,7 +1831,7 @@ max_completion_tokens = 8192          # Max tokens per response
 context_window = 256000               # Total context window in tokens (for auto-compact)
 ```
 
-**Credential resolution order:** `api_key` → `env_key` → cached `auth_provider` token (terminal: a cache miss resolves to no credential, never the session token) → session token → `XAI_API_KEY`. See [Per-Model Auth Providers](#per-model-auth-providers).
+**Credential resolution order:** `api_key` → `env_key` → cached `auth_provider` token (terminal: a cache miss resolves to no credential, never the session token) → session token → `XAI_API_KEY`. A declared but unset `env_key` also fails closed; it never forwards a session or global xAI key to that provider endpoint. See [Per-Model Auth Providers](#per-model-auth-providers).
 
 The `context_window` parameter is used to calculate when auto-compact should trigger. If not specified, Grok falls back to built-in defaults for known models.
 
@@ -1976,7 +1983,7 @@ Extend Grok's capabilities with [Model Context Protocol](https://modelcontextpro
 MCP servers are configured in `~/.grok/config.toml`:
 
 ```toml
-[mcp_servers.<name>]
+[mcp_servers.example]
 command = "/path/to/server"           # Server executable
 args = ["--flag", "value"]            # Command arguments
 env = { VAR = "value" }               # Environment variables

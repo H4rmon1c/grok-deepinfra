@@ -380,6 +380,9 @@ impl LspClient {
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
+        // LSP servers are arbitrary project/plugin helpers. Remove accidental
+        // inheritance; an explicit LSP `env` entry below can opt in.
+        crate::util::scrub_openai_api_key_std(&mut cmd);
         for (k, v) in &config.env {
             cmd.env(k, v);
         }

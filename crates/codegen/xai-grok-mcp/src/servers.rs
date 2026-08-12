@@ -4197,6 +4197,10 @@ pub async fn start_mcp_server(
             });
             let mut cmd = Command::new(&program);
             cmd.kill_on_drop(true).args(&spawn_args);
+            // MCP servers are arbitrary helper processes, not samplers. Drop
+            // accidental process inheritance; an explicit MCP `env` entry
+            // below may still opt in deliberately.
+            xai_grok_tools::util::scrub_openai_api_key(&mut cmd);
             for env_variable in &env {
                 cmd.env(&env_variable.name, &env_variable.value);
             }

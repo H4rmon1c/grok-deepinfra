@@ -1,5 +1,10 @@
 # Grok
 
+> **Upstream package reference:** this npm package installs the official Grok
+> binary, not the OpenAI-first source fork in this repository. Fork users
+> should follow the root [`README.md`](../../../../../README.md), export an
+> OpenAI Platform `OPENAI_API_KEY`, and run `./grok-openai` from their clone.
+
 Bring Grok into your terminal. Fast, flicker-free CLI built for plans, subagents, and parallel work.
 
 **[Homepage](https://x.ai/cli)** | **[Documentation](https://docs.x.ai/build/overview)**

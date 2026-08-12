@@ -133,6 +133,17 @@ pub struct BuiltAuthMethods {
     pub default_auth_method_id: Option<acp::AuthMethodId>,
 }
 
+/// Resolve the startup auth family. An explicit user/admin pin wins; otherwise
+/// a selected model with its own credential declaration is API-key-only. This
+/// prevents a missing provider key from silently selecting an unrelated
+/// browser/session login flow.
+pub(crate) fn effective_preferred_method(
+    configured: Option<PreferredAuthMethod>,
+    current_model_declares_credentials: bool,
+) -> Option<PreferredAuthMethod> {
+    configured.or_else(|| current_model_declares_credentials.then_some(PreferredAuthMethod::ApiKey))
+}
+
 /// Build the `auth_methods` list and default `auth_method_id` from
 /// pre-computed inputs.
 ///
@@ -403,7 +414,7 @@ pub(crate) fn session_token_auth_gate(
 pub const AUTH_ERROR_SESSION_EXPIRED: &str =
     "Session expired. Run `grok login` to re-authenticate.";
 
-pub const AUTH_ERROR_API_KEY: &str = "Authentication failed. Run `grok login`, set XAI_API_KEY, or add api_key to ~/.grok/config.toml.";
+pub const AUTH_ERROR_API_KEY: &str = "Authentication failed. Set OPENAI_API_KEY to an OpenAI Platform API key, or configure api_key/env_key for the selected model in $GROK_HOME/config.toml.";
 
 /// Next ACP method id when `cached_token` cannot proceed (missing / expired /
 /// legacy WebLogin), or `None` when fallthrough is forbidden.
@@ -428,8 +439,8 @@ pub(crate) fn method_id_after_cached_token_unavailable(
     }
 }
 
-/// Error when `preferred_method=api_key` but no key/BYOK credentials exist.
-pub const PREFERRED_API_KEY_UNAVAILABLE: &str = "preferred_method=api_key but no API key is configured (set XAI_API_KEY or model api_key/env_key in config.toml).";
+/// Error when API-key auth is required but no key/BYOK credentials exist.
+pub const PREFERRED_API_KEY_UNAVAILABLE: &str = "No provider API key is configured. Set OPENAI_API_KEY to an OpenAI Platform API key and restart, or configure api_key/env_key for the selected model in $GROK_HOME/config.toml. A ChatGPT subscription or browser session token is not an API key.";
 
 /// Error when `preferred_method=oidc` but the session path cannot proceed.
 pub const PREFERRED_OIDC_UNAVAILABLE: &str =
@@ -440,11 +451,11 @@ pub(crate) fn xai_api_key_auth_method() -> acp::AuthMethod {
     acp::AuthMethod::Agent(
         acp::AuthMethodAgent::new(
             acp::AuthMethodId::new(XAI_API_KEY_METHOD_ID),
-            "xai.api_key".to_string(),
+            "Provider API key".to_string(),
         )
-        .description(Some(format!(
-            "{XAI_API_KEY_ENV_VAR} or api_key/env_key in config.toml"
-        ))),
+        .description(Some(
+            "OPENAI_API_KEY, XAI_API_KEY, or per-model api_key/env_key in config.toml".to_string(),
+        )),
     )
 }
 
@@ -582,6 +593,20 @@ mod tests {
             has_auth_provider_command: false,
             preferred_method: None,
         }
+    }
+
+    #[test]
+    fn declared_provider_credentials_auto_pin_api_key_auth() {
+        assert_eq!(
+            effective_preferred_method(None, true),
+            Some(PreferredAuthMethod::ApiKey)
+        );
+        assert_eq!(effective_preferred_method(None, false), None);
+        assert_eq!(
+            effective_preferred_method(Some(PreferredAuthMethod::Oidc), true),
+            Some(PreferredAuthMethod::Oidc),
+            "an explicit auth policy must win"
+        );
     }
 
     fn method_ids(built: &BuiltAuthMethods) -> Vec<&str> {
@@ -911,6 +936,7 @@ mod tests {
     fn env_key_probe_unusable_suppresses_advertise_without_byok() {
         let _set = EnvGuard::set(XAI_API_KEY_ENV_VAR, "xai-dead-key");
         let _legacy = EnvGuard::unset(LEGACY_XAI_API_KEY_ENV_VAR);
+        let _openai = EnvGuard::unset("OPENAI_API_KEY");
         let cfg = Config::default();
         let models = resolve_model_list(&cfg, None);
         assert!(

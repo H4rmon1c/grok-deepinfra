@@ -24,6 +24,16 @@ pub(crate) mod pty_session;
 pub const DEFAULT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 pub const DEFAULT_OUTPUT_BYTE_LIMIT: usize = 30_000; // 30k characters
 
+/// Strip sampler-only credentials before an environment crosses an ACP
+/// terminal boundary. The comparison is case-insensitive for Windows and for
+/// defensive consistency with environment-policy matching.
+pub(crate) fn scrub_sampler_credentials_from_env(
+    env: impl IntoIterator<Item = (String, String)>,
+) -> impl Iterator<Item = (String, String)> {
+    env.into_iter()
+        .filter(|(name, _)| !name.eq_ignore_ascii_case(xai_grok_tools::util::OPENAI_API_KEY_ENV))
+}
+
 /// Resolved absolute path to bash. On Unix uses the `xai_grok_config` shell
 /// resolution cascade (`$GROK_SHELL` > `$SHELL` > `which` > common dirs >
 /// `/bin/bash`) and is cached process-wide. On non-Unix returns `"/bin/bash"`
@@ -229,5 +239,26 @@ impl AsyncTerminalRunner for TerminalRunner {
         } else {
             LocalTerminalRunner.run(request).await
         }
+    }
+}
+
+#[cfg(test)]
+mod credential_scrub_tests {
+    use super::scrub_sampler_credentials_from_env;
+
+    #[test]
+    fn acp_terminal_env_scrubs_openai_key_case_insensitively() {
+        let filtered: std::collections::HashMap<_, _> = scrub_sampler_credentials_from_env([
+            ("OPENAI_API_KEY".to_string(), "uppercase-secret".to_string()),
+            (
+                "OpenAi_Api_Key".to_string(),
+                "mixed-case-secret".to_string(),
+            ),
+            ("PATH".to_string(), "/safe/bin".to_string()),
+        ])
+        .collect();
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered.get("PATH").map(String::as_str), Some("/safe/bin"));
     }
 }

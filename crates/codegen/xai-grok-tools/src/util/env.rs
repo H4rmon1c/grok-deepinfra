@@ -1,9 +1,9 @@
 //! Environment variable helpers and process isolation for terminal execution.
 //!
-//! All implementations now live in the lightweight [`xai_tty_utils`] crate
-//! so that every crate in the workspace can use them without pulling in the
-//! heavyweight `xai-grok-tools` dependency. This module re-exports the public
-//! API for backward compatibility.
+//! TTY detachment and pager helpers live in the lightweight
+//! [`xai_tty_utils`] crate and are re-exported here. Agent markers and sampler
+//! credential scrubbing stay in this crate because they are Grok-tool policy,
+//! not general terminal utilities.
 
 pub use xai_tty_utils::{detach_from_tty, pager_env};
 
@@ -38,10 +38,27 @@ pub const GROK_AGENT_ENV: &str = "GROK_AGENT";
 /// Sentinel value for [`GROK_AGENT_ENV`] on agent tool terminals.
 pub const GROK_AGENT_ENV_VALUE: &str = "1";
 
+/// The OpenAI credential belongs to the sampler process and must never be
+/// inherited by agent-controlled terminal commands.
+pub const OPENAI_API_KEY_ENV: &str = "OPENAI_API_KEY";
+
 /// Force `GROK_AGENT=1` on an agent terminal child so request/login env cannot
 /// clear the agent marker.
 pub fn apply_grok_agent_marker(cmd: &mut tokio::process::Command) {
     cmd.env(GROK_AGENT_ENV, GROK_AGENT_ENV_VALUE);
+}
+
+/// Remove the OpenAI credential from an agent-spawned child process.
+///
+/// Call this after every inherited, login-shell, policy, and per-request
+/// environment layer so none of those layers can re-introduce the key.
+pub fn scrub_openai_api_key(cmd: &mut tokio::process::Command) {
+    cmd.env_remove(OPENAI_API_KEY_ENV);
+}
+
+/// Synchronous-command counterpart to [`scrub_openai_api_key`].
+pub fn scrub_openai_api_key_std(cmd: &mut std::process::Command) {
+    cmd.env_remove(OPENAI_API_KEY_ENV);
 }
 
 /// Expand the four plugin-path tokens (`${CLAUDE_PLUGIN_ROOT}` / `${GROK_PLUGIN_ROOT}`
@@ -69,7 +86,10 @@ pub fn substitute_plugin_tokens(
 
 #[cfg(test)]
 mod tests {
-    use super::{GROK_AGENT_ENV, GROK_AGENT_ENV_VALUE, substitute_plugin_tokens};
+    use super::{
+        GROK_AGENT_ENV, GROK_AGENT_ENV_VALUE, OPENAI_API_KEY_ENV, scrub_openai_api_key,
+        scrub_openai_api_key_std, substitute_plugin_tokens,
+    };
 
     const ALL_TOKENS: &str = "${CLAUDE_PLUGIN_ROOT}/a ${GROK_PLUGIN_ROOT}/b ${CLAUDE_PLUGIN_DATA}/c ${GROK_PLUGIN_DATA}/d";
 
@@ -98,5 +118,47 @@ mod tests {
     fn agent_marker_constants_match_cursor_parity() {
         assert_eq!(GROK_AGENT_ENV, "GROK_AGENT");
         assert_eq!(GROK_AGENT_ENV_VALUE, "1");
+    }
+
+    #[test]
+    fn openai_key_scrub_preserves_benign_environment_entries() {
+        let mut cmd = tokio::process::Command::new("true");
+        cmd.env(OPENAI_API_KEY_ENV, "test-secret")
+            .env("PATH", "/safe/bin");
+
+        scrub_openai_api_key(&mut cmd);
+
+        let scrubbed = cmd
+            .as_std()
+            .get_envs()
+            .find(|(key, _)| *key == std::ffi::OsStr::new(OPENAI_API_KEY_ENV))
+            .map(|(_, value)| value);
+        let path = cmd
+            .as_std()
+            .get_envs()
+            .find(|(key, _)| *key == std::ffi::OsStr::new("PATH"))
+            .and_then(|(_, value)| value);
+
+        assert_eq!(scrubbed, Some(None));
+        assert_eq!(path, Some(std::ffi::OsStr::new("/safe/bin")));
+    }
+
+    #[test]
+    fn std_command_openai_key_scrub_allows_explicit_opt_in_afterward() {
+        let mut cmd = std::process::Command::new("true");
+        cmd.env(OPENAI_API_KEY_ENV, "inherited-secret")
+            .env("PATH", "/safe/bin");
+
+        scrub_openai_api_key_std(&mut cmd);
+        // A trusted helper configuration may explicitly opt in after the
+        // inherited credential has been removed.
+        cmd.env(OPENAI_API_KEY_ENV, "explicit-secret");
+
+        let envs: std::collections::HashMap<_, _> = cmd
+            .get_envs()
+            .filter_map(|(key, value)| Some((key.to_str()?, value?.to_str()?)))
+            .collect();
+        assert_eq!(envs.get(OPENAI_API_KEY_ENV), Some(&"explicit-secret"));
+        assert_eq!(envs.get("PATH"), Some(&"/safe/bin"));
     }
 }

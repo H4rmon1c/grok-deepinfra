@@ -519,17 +519,16 @@ impl SessionActor {
             ConversationItem::user(user_msg),
         ];
 
-        let model = match model_override {
-            Some(m) => m.to_owned(),
-            None => "grok-build".to_owned(),
-        };
-
         let request = ConversationRequest {
             items,
             tools: vec![],
-            model: Some(model),
-            temperature: Some(0.1),
-            max_output_tokens: Some(50),
+            // With no explicit override, the prepared client supplies the
+            // current model instead of the removed upstream model slug.
+            model: model_override.map(str::to_owned),
+            // Reasoning Responses models may reject temperature/top_p; leave
+            // those controls and effort unset for cross-provider compatibility.
+            temperature: None,
+            max_output_tokens: Some(512),
             ..Default::default()
         };
 
@@ -588,10 +587,10 @@ impl SessionActor {
     /// (`GROK_PROMPT_SUGGESTIONS_MODEL`) > `[models] prompt_suggestion`
     /// (config.toml) > remote `prompt_suggestion_model` (remote settings) >
     /// (config.toml) > remote `prompt_suggestion_model` (remote settings) >
-    /// [`prompt_suggest::DEFAULT_SUGGEST_MODEL`] (`grok-build-0.1`). Every
+    /// [`prompt_suggest::DEFAULT_SUGGEST_MODEL`] (`gpt-5.6-luna`). Every
     /// tier except env is catalog-guarded against this shell's own model
     /// catalog — when the effective model is not sampleable here (e.g.
-    /// `grok-build-0.1` for OAuth users) the request is **skipped
+    /// a model excluded by the current catalog) the request is **skipped
     /// entirely** instead of fired doomed. The session model is never used:
     /// a per-turn background call must stay on the small model.
     /// Temperature, max_output_tokens, and

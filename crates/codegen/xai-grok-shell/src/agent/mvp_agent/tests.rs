@@ -2614,6 +2614,32 @@ async fn auth_type_xai_api_key_no_current_returns_api_key() {
              behavior to fall back to."
     );
 }
+#[tokio::test(flavor = "current_thread")]
+#[serial_test::serial]
+async fn xai_env_key_cannot_authenticate_the_bundled_openai_model() {
+    use crate::agent::auth_method::{XAI_API_KEY_ENV_VAR, XAI_API_KEY_METHOD_ID};
+    use xai_grok_test_support::EnvGuard;
+    let _openai = EnvGuard::unset("OPENAI_API_KEY");
+    let _xai = EnvGuard::set(XAI_API_KEY_ENV_VAR, "test-xai-key-must-not-cross");
+    let agent = build_minimal_agent_for_tests();
+    assert_eq!(agent.sampling_config.borrow().api_key, None);
+    assert_eq!(
+        agent.sampling_config.borrow().base_url,
+        "https://api.openai.com/v1"
+    );
+    let request = acp::AuthenticateRequest::new(acp::AuthMethodId::new(XAI_API_KEY_METHOD_ID));
+    let err = <MvpAgent as acp::Agent>::authenticate(&agent, request)
+        .await
+        .expect_err("xAI key must not authenticate an OpenAI endpoint");
+    assert_eq!(err.code, acp::Error::auth_required().code);
+    assert!(
+        err.data
+            .as_ref()
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|message| message.contains("OPENAI_API_KEY"))
+    );
+    assert_eq!(agent.sampling_config.borrow().api_key, None);
+}
 /// Positive baseline: when both signals agree (session-based method AND
 /// a live in-memory token), `SessionToken` is returned. This is the
 /// common case during a healthy session.
@@ -2722,6 +2748,7 @@ async fn cached_token_fallthrough_falls_to_grok_com_without_credentials() {
     let _lockdown = EnvGuard::unset("GROK_DISABLE_API_KEY_AUTH");
     let _new = EnvGuard::unset(XAI_API_KEY_ENV_VAR);
     let _legacy = EnvGuard::unset(LEGACY_XAI_API_KEY_ENV_VAR);
+    let _openai = EnvGuard::unset("OPENAI_API_KEY");
     let agent = build_minimal_agent_for_tests();
     assert_eq!(
         agent
@@ -2760,7 +2787,11 @@ async fn prepare_video_gen_config_disabled_when_zdr_flag_set() {
         }
     }
     let agent = build_minimal_agent_for_tests();
-    agent.sampling_config.borrow_mut().api_key = Some("test-key".to_string());
+    {
+        let mut sampling = agent.sampling_config.borrow_mut();
+        sampling.base_url = "https://api.x.ai/v1".to_string();
+        sampling.api_key = Some("test-key".to_string());
+    }
     assert!(matches!(
         agent.prepare_video_gen_config(),
         VideoGenConfig::Enabled { .. }
@@ -2802,7 +2833,11 @@ async fn prepare_video_gen_config_disabled_when_zdr_flag_set() {
 async fn prepare_video_gen_config_respects_feature_flag() {
     use xai_grok_tools::implementations::grok_build::video_gen::VideoGenConfig;
     let agent = build_minimal_agent_for_tests();
-    agent.sampling_config.borrow_mut().api_key = Some("test-key".to_string());
+    {
+        let mut sampling = agent.sampling_config.borrow_mut();
+        sampling.base_url = "https://api.x.ai/v1".to_string();
+        sampling.api_key = Some("test-key".to_string());
+    }
     assert!(matches!(
         agent.prepare_video_gen_config(),
         VideoGenConfig::Enabled { .. }
@@ -2821,7 +2856,11 @@ async fn prepare_video_gen_config_respects_feature_flag() {
 async fn prepare_image_gen_config_fails_open_without_auth() {
     use xai_grok_tools::implementations::grok_build::image_gen::ImageGenConfig;
     let agent = build_minimal_agent_for_tests();
-    agent.sampling_config.borrow_mut().api_key = Some("test-key".to_string());
+    {
+        let mut sampling = agent.sampling_config.borrow_mut();
+        sampling.base_url = "https://api.x.ai/v1".to_string();
+        sampling.api_key = Some("test-key".to_string());
+    }
     let ImageGenConfig::Enabled {
         tier_restricted, ..
     } = agent.prepare_image_gen_config()
@@ -2841,7 +2880,11 @@ async fn prepare_image_gen_config_fails_open_without_auth() {
 async fn prepare_image_gen_config_sends_client_identifier_header() {
     use xai_grok_tools::implementations::grok_build::image_gen::ImageGenConfig;
     let agent = build_minimal_agent_for_tests();
-    agent.sampling_config.borrow_mut().api_key = Some("test-key".to_string());
+    {
+        let mut sampling = agent.sampling_config.borrow_mut();
+        sampling.base_url = "https://api.x.ai/v1".to_string();
+        sampling.api_key = Some("test-key".to_string());
+    }
     let ImageGenConfig::Enabled { extra_headers, .. } = agent.prepare_image_gen_config() else {
         panic!("expected Enabled");
     };
@@ -2859,7 +2902,11 @@ async fn prepare_image_gen_config_sends_client_identifier_header() {
 async fn prepare_video_gen_config_sends_client_identifier_header() {
     use xai_grok_tools::implementations::grok_build::video_gen::VideoGenConfig;
     let agent = build_minimal_agent_for_tests();
-    agent.sampling_config.borrow_mut().api_key = Some("test-key".to_string());
+    {
+        let mut sampling = agent.sampling_config.borrow_mut();
+        sampling.base_url = "https://api.x.ai/v1".to_string();
+        sampling.api_key = Some("test-key".to_string());
+    }
     let VideoGenConfig::Enabled { extra_headers, .. } = agent.prepare_video_gen_config() else {
         panic!("expected Enabled");
     };
@@ -2871,6 +2918,25 @@ async fn prepare_video_gen_config_sends_client_identifier_header() {
         "video gen API calls must carry the client identifier so the server \
          applies the coding ZDR opt-out to Build traffic"
     );
+}
+#[tokio::test(flavor = "current_thread")]
+async fn openai_key_is_never_enabled_for_xai_media_tools() {
+    use xai_grok_tools::implementations::grok_build::image_gen::ImageGenConfig;
+    use xai_grok_tools::implementations::grok_build::video_gen::VideoGenConfig;
+    let agent = build_minimal_agent_for_tests();
+    {
+        let mut sampling = agent.sampling_config.borrow_mut();
+        sampling.base_url = "https://api.openai.com/v1".to_string();
+        sampling.api_key = Some("test-openai-key".to_string());
+    }
+    assert!(matches!(
+        agent.prepare_image_gen_config(),
+        ImageGenConfig::Disabled
+    ));
+    assert!(matches!(
+        agent.prepare_video_gen_config(),
+        VideoGenConfig::Disabled
+    ));
 }
 /// Regression: `x.ai/auth/info` must return profile fields even when the
 /// access token is expired — profile data does not expire with the token,

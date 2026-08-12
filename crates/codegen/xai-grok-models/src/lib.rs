@@ -68,3 +68,16 @@ pub fn default_session_summary_model() -> &'static str {
         .as_deref()
         .unwrap_or(&DEFAULTS.default)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn openai_profiles_are_the_bundled_defaults() {
+        assert_eq!(default_model(), "gpt-5.6");
+        assert_eq!(default_web_search_model(), "gpt-5.6");
+        assert_eq!(default_image_description_model(), "gpt-5.6");
+        assert_eq!(default_session_summary_model(), "gpt-5.6-luna");
+    }
+}

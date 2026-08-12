@@ -78,6 +78,7 @@ impl StaticShellSnapshot {
                 .kill_on_drop(true);
             crate::util::detach_command(&mut cmd);
             cmd.envs(crate::util::pager_env());
+            crate::util::scrub_openai_api_key(&mut cmd);
             #[allow(clippy::disallowed_methods)] // probe killed on drop
             let mut child = cmd.spawn().ok()?;
 

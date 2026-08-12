@@ -100,7 +100,11 @@ impl AsyncTerminalRunner for LocalTerminalRunner {
         #[cfg(unix)]
         let mut cmd = {
             let mut c = Command::new(crate::terminal::default_shell_path());
-            c.arg("-lc").arg(&request.command);
+            // `-l` may source a startup file that exports OPENAI_API_KEY after
+            // the process environment was scrubbed. Unset it again immediately
+            // before the agent-controlled command runs.
+            c.arg("-lc")
+                .arg(format!("unset OPENAI_API_KEY; {}", request.command));
             c
         };
         #[cfg(not(unix))]
@@ -116,6 +120,7 @@ impl AsyncTerminalRunner for LocalTerminalRunner {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        xai_grok_tools::util::scrub_openai_api_key(&mut cmd);
 
         // Detach from the controlling terminal so child processes
         // (e.g. GPG pinentry) cannot open /dev/tty and corrupt the TUI.
@@ -277,6 +282,22 @@ mod tests {
 
         assert_eq!(result.combined_output.trim(), "hello");
         assert_eq!(result.exit_code, Some(0));
+    }
+
+    #[tokio::test]
+    async fn test_child_env_scrubs_openai_key_but_keeps_benign_override() {
+        let mut request =
+            make_request("printf '%s|%s' \"${OPENAI_API_KEY-unset}\" \"$GROK_TEST_SAFE_ENV\"");
+        request
+            .env
+            .insert("OPENAI_API_KEY".to_string(), "request-secret".to_string());
+        request
+            .env
+            .insert("GROK_TEST_SAFE_ENV".to_string(), "kept".to_string());
+
+        let result = LocalTerminalRunner.run(request).await.unwrap();
+
+        assert_eq!(result.combined_output.trim(), "unset|kept");
     }
 
     /// Timing out a command whose grandchild inherited the output pipes must

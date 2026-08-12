@@ -1,40 +1,156 @@
 {
-  "default": "grok-4.5",
-  "web_search": "grok-4.5",
-  "image_description": "grok-4.5",
-  "session_summary": "grok-4.5",
+  "default": "gpt-5.6",
+  "web_search": "gpt-5.6",
+  "image_description": "gpt-5.6",
+  "session_summary": "gpt-5.6-luna",
   "models": [
     {
-      "id": "grok-4.5",
-      "model": "grok-4.5",
-      "name": "Grok 4.5",
-      "description": "SpaceXAI's new frontier model",
-      "context_window": 500000,
+      "id": "gpt-5.6",
+      "model": "gpt-5.6",
+      "name": "GPT-5.6",
+      "description": "OpenAI's frontier model for complex professional work",
+      "base_url": "https://api.openai.com/v1",
+      "env_key": "OPENAI_API_KEY",
+      "context_window": 1050000,
+      "max_completion_tokens": 128000,
       "api_backend": "responses",
       "supports_backend_search": false,
-      "system_prompt_label": "Grok 4.5",
-      "show_model_fingerprint": true,
+      "stream_tool_calls": false,
+      "system_prompt_label": "OpenAI GPT-5.6",
       "supports_reasoning_effort": true,
-      "reasoning_effort": "high",
+      "reasoning_effort": "medium",
       "auto_compact_threshold_percent": 80,
-      "compaction_at_tokens": true,
-      "compactions_remaining": 1,
       "reasoning_efforts": [
+        {
+          "value": "max",
+          "label": "Max Effort",
+          "description": "Maximum reasoning depth for the hardest tasks"
+        },
+        {
+          "value": "xhigh",
+          "label": "Extra High Effort",
+          "description": "Very deep reasoning for complex implementations"
+        },
         {
           "value": "high",
           "label": "High Effort",
-          "description": "Highest implementation quality with extensive reasoning",
-          "default": true
+          "description": "Thorough implementation and testing"
         },
         {
           "value": "medium",
           "label": "Medium Effort",
-          "description": "Balanced effort with standard implementation and testing"
+          "description": "Balanced reasoning, speed, and cost",
+          "default": true
         },
         {
           "value": "low",
           "label": "Low Effort",
-          "description": "Quick, fast implementations"
+          "description": "Faster responses for straightforward tasks"
+        },
+        {
+          "value": "none",
+          "label": "No Reasoning",
+          "description": "Disable reasoning for the fastest supported responses"
+        }
+      ]
+    },
+    {
+      "id": "gpt-5.6-terra",
+      "model": "gpt-5.6-terra",
+      "name": "GPT-5.6 Terra",
+      "description": "OpenAI GPT-5.6 model balancing intelligence and cost",
+      "base_url": "https://api.openai.com/v1",
+      "env_key": "OPENAI_API_KEY",
+      "context_window": 1050000,
+      "max_completion_tokens": 128000,
+      "api_backend": "responses",
+      "supports_backend_search": false,
+      "stream_tool_calls": false,
+      "system_prompt_label": "OpenAI GPT-5.6 Terra",
+      "supports_reasoning_effort": true,
+      "reasoning_effort": "medium",
+      "auto_compact_threshold_percent": 80,
+      "reasoning_efforts": [
+        {
+          "value": "max",
+          "label": "Max Effort",
+          "description": "Maximum reasoning depth for the hardest tasks"
+        },
+        {
+          "value": "xhigh",
+          "label": "Extra High Effort",
+          "description": "Very deep reasoning for complex implementations"
+        },
+        {
+          "value": "high",
+          "label": "High Effort",
+          "description": "Thorough implementation and testing"
+        },
+        {
+          "value": "medium",
+          "label": "Medium Effort",
+          "description": "Balanced reasoning, speed, and cost",
+          "default": true
+        },
+        {
+          "value": "low",
+          "label": "Low Effort",
+          "description": "Faster responses for straightforward tasks"
+        },
+        {
+          "value": "none",
+          "label": "No Reasoning",
+          "description": "Disable reasoning for the fastest supported responses"
+        }
+      ]
+    },
+    {
+      "id": "gpt-5.6-luna",
+      "model": "gpt-5.6-luna",
+      "name": "GPT-5.6 Luna",
+      "description": "OpenAI GPT-5.6 model optimized for cost-sensitive workloads",
+      "base_url": "https://api.openai.com/v1",
+      "env_key": "OPENAI_API_KEY",
+      "context_window": 1050000,
+      "max_completion_tokens": 128000,
+      "api_backend": "responses",
+      "supports_backend_search": false,
+      "stream_tool_calls": false,
+      "system_prompt_label": "OpenAI GPT-5.6 Luna",
+      "supports_reasoning_effort": true,
+      "reasoning_effort": "medium",
+      "auto_compact_threshold_percent": 80,
+      "reasoning_efforts": [
+        {
+          "value": "max",
+          "label": "Max Effort",
+          "description": "Maximum reasoning depth for the hardest tasks"
+        },
+        {
+          "value": "xhigh",
+          "label": "Extra High Effort",
+          "description": "Very deep reasoning for complex implementations"
+        },
+        {
+          "value": "high",
+          "label": "High Effort",
+          "description": "Thorough implementation and testing"
+        },
+        {
+          "value": "medium",
+          "label": "Medium Effort",
+          "description": "Balanced reasoning, speed, and cost",
+          "default": true
+        },
+        {
+          "value": "low",
+          "label": "Low Effort",
+          "description": "Faster responses for straightforward tasks"
+        },
+        {
+          "value": "none",
+          "label": "No Reasoning",
+          "description": "Disable reasoning for the fastest supported responses"
         }
       ]
     }

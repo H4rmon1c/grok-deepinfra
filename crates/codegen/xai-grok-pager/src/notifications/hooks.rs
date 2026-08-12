@@ -24,6 +24,10 @@ fn execute_hook(
         cmd.env("GROK_SESSION_ID", sid);
     }
 
+    // Notification commands are arbitrary helpers and have no configured
+    // reason to receive the sampler credential.
+    xai_grok_tools::util::scrub_openai_api_key_std(&mut cmd);
+
     xai_tty_utils::detach_std_command(&mut cmd);
 
     #[allow(clippy::disallowed_methods)] // enrolled below, once the child exists

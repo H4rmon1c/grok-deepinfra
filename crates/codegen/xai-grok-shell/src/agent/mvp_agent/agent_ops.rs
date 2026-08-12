@@ -6,17 +6,22 @@ use super::*;
 use crate::auth::PreferredAuthMethod;
 use xai_grok_tools::implementations::grok_build::task::backend::SubagentBackend;
 use xai_tty_utils::ProcessScope;
-/// `preferred` model, else catalog `current`, else first with own credentials.
+/// Resolve an xAI-owned credential for xAI-only tool fallbacks.
+///
+/// Third-party model keys (including `OPENAI_API_KEY`) must never be published
+/// through [`SharedAuthKeyProvider`]: pager voice and the inherited Imagine
+/// tools use that provider for requests to xAI endpoints.
 fn byok_from_models(
     models: &indexmap::IndexMap<String, ModelEntry>,
     preferred: Option<&str>,
     current: &str,
 ) -> Option<String> {
-    preferred
+    let selected = preferred
         .and_then(|id| models.get(id))
-        .and_then(|m| m.own_credential())
-        .or_else(|| models.get(current).and_then(|m| m.own_credential()))
-        .or_else(|| models.values().find_map(|m| m.own_credential()))
+        .or_else(|| models.get(current));
+    selected
+        .filter(|model| crate::util::is_xai_api_bearer_url(&model.info().base_url))
+        .and_then(ModelEntry::own_credential)
 }
 struct MissingSessionCtx {
     has_session_key: bool,
@@ -149,8 +154,8 @@ impl MvpAgent {
     pub(super) fn set_auth_method(&self, id: acp::AuthMethodId) {
         self.auth_method_id.store(Some(std::sync::Arc::new(id)));
     }
-    /// Publish model-owned credentials for voice/tools static fallthrough.
-    /// Only [`ModelEntry::own_credential`] — not `sampling_config.api_key` (may be a session JWT).
+    /// Publish an xAI model-owned credential for xAI-only voice/tool fallback.
+    /// Third-party model credentials are intentionally withheld.
     pub(crate) fn sync_process_static_api_key(&self, preferred_model_id: Option<&str>) {
         if self.cfg.borrow().grok_com_config.api_key_auth_disabled() {
             self.auth_manager.set_process_static_api_key(None);
@@ -2180,6 +2185,9 @@ impl MvpAgent {
     ) -> xai_grok_tools::implementations::grok_build::image_gen::ImageGenConfig {
         use xai_grok_tools::implementations::grok_build::image_gen::ImageGenConfig;
         let sampling_config = self.sampling_config.borrow();
+        if !crate::util::is_xai_api_bearer_url(&sampling_config.base_url) {
+            return ImageGenConfig::Disabled;
+        }
         let Some(ref api_key) = sampling_config.api_key else {
             return ImageGenConfig::Disabled;
         };
@@ -2222,6 +2230,9 @@ impl MvpAgent {
         &self,
     ) -> xai_grok_tools::implementations::grok_build::video_gen::VideoGenConfig {
         use xai_grok_tools::implementations::grok_build::video_gen::VideoGenConfig;
+        if !crate::util::is_xai_api_bearer_url(&self.sampling_config.borrow().base_url) {
+            return VideoGenConfig::Disabled;
+        }
         let cfg = self.cfg.borrow();
         if !cfg.resolve_video_gen().value {
             return VideoGenConfig::Disabled;
@@ -3427,6 +3438,9 @@ impl MvpAgent {
     /// shared mutable state).
     pub(super) fn seed_client_config_auth_if_available(&self) {
         let mut sampling_config = self.sampling_config.borrow_mut();
+        if !crate::util::is_xai_api_bearer_url(&sampling_config.base_url) {
+            return;
+        }
         if sampling_config.api_key.is_none() {
             if let Some(auth) = self.auth_manager.current_or_expired() {
                 sampling_config.api_key = Some(auth.key);

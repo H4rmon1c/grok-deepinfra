@@ -1,0 +1,44 @@
+#!/usr/bin/env sh
+set -eu
+# Do not echo the saved key or runtime env assignment if a caller enabled
+# shell tracing (for example, by invoking `sh -x grok-openai`).
+set +x
+
+case "${OPENAI_API_KEY:-}" in
+  *[![:space:]]*) ;;
+  *)
+  printf '%s\n' \
+    'OPENAI_API_KEY is not set or contains only whitespace.' \
+    'Create an OpenAI Platform API key, export it in this shell, and retry:' \
+    '  export OPENAI_API_KEY="sk-..."' \
+    'A ChatGPT subscription or browser/session token is not an API key.' >&2
+  exit 2
+  ;;
+esac
+
+if [ -z "${GROK_HOME:-}" ]; then
+  if [ -z "${HOME:-}" ]; then
+    printf '%s\n' 'HOME is not set; set GROK_HOME to a writable config directory.' >&2
+    exit 2
+  fi
+  GROK_HOME="${HOME}/.grok-openai"
+  export GROK_HOME
+fi
+
+# Voice transcription is an inherited xAI-only service. Keep its shortcut off
+# for the OpenAI-first profile unless the user explicitly opts in.
+if [ "${GROK_VOICE_MODE+x}" != x ]; then
+  GROK_VOICE_MODE=0
+  export GROK_VOICE_MODE
+fi
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+unset openai_key
+openai_key=$OPENAI_API_KEY
+unset OPENAI_API_KEY
+CARGO_TARGET_DIR="$script_dir/target" \
+  cargo build --locked --release --manifest-path "$script_dir/Cargo.toml" \
+  -p xai-grok-pager-bin
+OPENAI_API_KEY=$openai_key GROK_DISABLE_AUTOUPDATER=1 \
+  exec "$script_dir/target/release/xai-grok-pager" "$@"

@@ -9,7 +9,7 @@ Grok reads settings from config files, environment variables, and CLI flags. Thi
 Settings resolve highest-priority first:
 
 1. **CLI flags** (e.g. `--yolo`, `--model`, `--sandbox`)
-2. **Environment variables** (e.g. `XAI_API_KEY`, `GROK_MEMORY`)
+2. **Environment variables** (e.g. `OPENAI_API_KEY`, `GROK_MEMORY`)
 3. **config.toml** (`~/.grok/config.toml`)
 4. **Managed / requirements config** (files your org may deploy, e.g. `managed_config.toml` / `requirements.toml`)
 5. **Built-in defaults**
@@ -24,11 +24,11 @@ Location: `~/.grok/config.toml`. If the file is missing, Grok uses its built-in 
 
 ```toml
 [cli]
-auto_update = true                     # check for updates on launch
+auto_update = false                    # fork builds update through Git
 
 [models]
-default = "grok-4.5"                   # model used for new sessions
-web_search = "grok-4.5"                # model used by the web_search tool
+default = "gpt-5.6"                    # model used for new sessions
+web_search = "gpt-5.6"                 # model used by the web_search tool
 
 # Defaults applied to every model; a per-model [model.<id>] value always wins.
 # See "Custom Models" for the per-model overrides and full details.
@@ -38,7 +38,7 @@ top_p = 0.95
 max_completion_tokens = 8192
 max_retries = 8
 inference_idle_timeout_secs = 600
-stream_tool_calls = true
+stream_tool_calls = false              # xAI-only extension; keep false for OpenAI
 
 [ui]
 simple_mode = true                     # readline-style prompt editing (default); false = vim editing in the prompt
@@ -66,8 +66,8 @@ feedback = true                        # feedback system (default: true)
 lsp_tools = false                      # expose the lsp tool
 codebase_indexing = true               # code graph indexing (default: true)
 two_pass_compaction = false            # prefire two-pass compaction (default: false, opt-in)
-remote_fetch = true                    # allow optional online model-catalog fetches (default: true;
-                                       # set false for firewalled/air-gapped deployments; background
+remote_fetch = false                   # allow optional online model-catalog fetches (fork default: false;
+                                       # set true only for an intentional remote catalog; background
                                        # managed-config sync has its own switch: managed_config)
 
 [session]
@@ -216,7 +216,7 @@ base_url = "https://api.example.com/v1"  # OpenAI-compatible endpoint
 name = "Display Name"                 # shown in model picker
 description = "Model description"      # optional
 api_key = "sk-..."                    # API key for this provider
-env_key = "XAI_API_KEY"               # env var(s) holding the API key; string or array (first set, non-empty wins)
+env_key = "MY_PROVIDER_API_KEY"       # env var(s) holding the API key; string or array (first set, non-empty wins)
 temperature = 0.7                     # sampling temperature (0.0-2.0)
 top_p = 0.95                          # nucleus sampling parameter
 max_completion_tokens = 8192          # max tokens per response
@@ -225,13 +225,23 @@ query_params = { api-version = "2026-07-22" } # query params appended to every r
 env_http_headers = { "X-Tenant" = "TENANT_TOKEN" }    # request headers from env vars, resolved at client build
 ```
 
-Credential resolution: `api_key` > `env_key` > signed-in session token > `XAI_API_KEY`. See [Custom Models](11-custom-models.md#request-query-parameters) for `query_params` and `env_http_headers`, and [Sandbox Mode](18-sandbox.md#shell-environment-policy) for `[shell_environment_policy]`, which restricts the environment variables tool subprocesses inherit.
+Credential resolution: `api_key` > `env_key` > signed-in session token >
+`XAI_API_KEY`. A model that declares `env_key` fails closed when that variable is
+missing; it never receives a session or xAI fallback key. See [Custom
+Models](11-custom-models.md#request-query-parameters) for `query_params` and
+`env_http_headers`, and [Sandbox Mode](18-sandbox.md#shell-environment-policy)
+for `[shell_environment_policy]`, which restricts the environment variables
+tool subprocesses inherit. The fork additionally strips accidentally inherited
+`OPENAI_API_KEY` values from common terminal, MCP, LSP, and hook subprocesses;
+explicit per-helper configuration may opt a trusted helper back in. This is an
+environment-containment measure, not a hard same-user sandbox: subprocesses may
+still read credential files accessible to the current operating-system user.
 
 To override a built-in model, use its name as the section key and set only the fields you need:
 
 ```toml
-[model.grok-build]
-api_key = "my-api-key"
+[model.gpt-5.6]
+env_key = "MY_OPENAI_API_KEY"
 ```
 
 ### MCP servers
@@ -299,7 +309,7 @@ explore = true                        # enable/disable specific types
 plan = false
 
 [subagents.models]
-explore = "grok-build"               # route to different models
+explore = "gpt-5.6-luna"             # route to a lower-cost bundled model
 ```
 
 To pin the model a subagent uses, set its entry under `[subagents.models]`.
@@ -700,6 +710,7 @@ The key ones. See the README for the complete list.
 
 | Variable | Description |
 |----------|-------------|
+| `OPENAI_API_KEY` | OpenAI Platform API key used by the bundled GPT profiles |
 | `XAI_API_KEY` | API key from console.x.ai |
 | `GROK_AUTH_PROVIDER_COMMAND` | External auth binary path |
 | `GROK_AUTH_PROVIDER_LABEL` | Display name on TUI login screen |

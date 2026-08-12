@@ -270,11 +270,22 @@ impl acp::Agent for MvpAgent {
                 );
             }
         }
-        let preferred_method_early = self.cfg.borrow().grok_com_config.preferred_method;
+        let models_snapshot = self.models_manager.models();
+        let current_model_id = self.models_manager.current_model_id();
+        let current_model_declares_credentials = models_snapshot
+            .get(current_model_id.0.as_ref())
+            .or_else(|| models_snapshot.values().next())
+            .is_some_and(crate::agent::config::ModelEntry::has_declared_credentials);
+        // A model with an explicit provider credential source is API-key-only.
+        // Treat that declaration as an automatic fail-closed pin when the user
+        // has not selected an auth family, so a missing OPENAI_API_KEY cannot
+        // fall through to the upstream xAI browser/session flow.
+        let preferred_method_early = auth_method::effective_preferred_method(
+            self.cfg.borrow().grok_com_config.preferred_method,
+            current_model_declares_credentials,
+        );
         let xai_api_base_url = self.cfg.borrow().endpoints.xai_api_base_url.clone();
-        let has_byok = self
-            .models_manager
-            .models()
+        let has_byok = models_snapshot
             .values()
             .any(crate::agent::config::ModelEntry::has_own_credentials);
         let first_party_env_ok = if crate::auth::should_probe_first_party_env_key(
@@ -294,7 +305,7 @@ impl acp::Agent for MvpAgent {
         self.auth_manager.set_first_party_env_api_key_ok(first_party_env_ok);
         let has_external_api_key = auth_method::should_advertise_xai_api_key_with_env_ok(
             disable_api_key_auth,
-            self.models_manager.models().values(),
+            models_snapshot.values(),
             first_party_env_ok,
         );
         let init_has_current = self.auth_manager.current().is_some();
@@ -554,6 +565,20 @@ impl acp::Agent for MvpAgent {
                 return Err(acp::Error::auth_required().data(msg));
             }
         }
+        let kind = auth_method::AuthMethodKind::from_id(&arguments.method_id);
+        if kind.is_session_based()
+            && !crate::util::is_xai_api_bearer_url(&self.sampling_config.borrow().base_url)
+        {
+            emit_login_span(
+                false,
+                arguments.method_id.0.as_ref(),
+                None,
+                Some("provider_credential_required"),
+            );
+            return Err(acp::Error::auth_required().data(
+                "The selected model requires its declared provider credential. Set OPENAI_API_KEY for the bundled OpenAI models; an xAI browser or cached session cannot be used.",
+            ));
+        }
         match arguments.method_id.0.as_ref() {
             auth_method::XAI_API_KEY_METHOD_ID => {
                 if self.cfg.borrow().grok_com_config.api_key_auth_disabled() {
@@ -564,7 +589,9 @@ impl acp::Agent for MvpAgent {
                     );
                 }
                 let mut sampling_config = self.sampling_config.borrow_mut();
-                if sampling_config.api_key.is_none() {
+                if sampling_config.api_key.is_none()
+                    && crate::util::is_xai_api_bearer_url(&sampling_config.base_url)
+                {
                     if let Ok(api_key) = auth_method::read_xai_api_key_env() {
                         sampling_config.api_key = Some(api_key.clone());
                         if let Err(e) = crate::auth::store_api_key(
@@ -578,20 +605,16 @@ impl acp::Agent for MvpAgent {
                                 Some(serde_json::json!({ "error": e.to_string() })),
                             );
                         }
-                    } else if !self
-                        .models_manager
-                        .models()
-                        .values()
-                        .any(|m| m.has_own_credentials())
-                    {
-                        emit_login_span(false, "api_key", None, Some("no_credentials"));
-                        return Err(
-                            acp::Error::auth_required()
-                                .data(
-                                    "Set XAI_API_KEY or add api_key/env_key to config.toml.",
-                                ),
-                        );
                     }
+                }
+                if sampling_config.api_key.is_none() {
+                    emit_login_span(false, "api_key", None, Some("no_credentials"));
+                    return Err(
+                        acp::Error::auth_required()
+                            .data(
+                                "Set OPENAI_API_KEY to an OpenAI Platform API key, or add api_key/env_key for the selected model to config.toml.",
+                            ),
+                    );
                 }
                 self.set_auth_method(arguments.method_id.clone());
                 self.sync_process_static_api_key(None);

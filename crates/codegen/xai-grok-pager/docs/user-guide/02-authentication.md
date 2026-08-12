@@ -1,12 +1,46 @@
 # Authentication
 
+## OpenAI API Key (Fork Default)
+
+This fork uses OpenAI's Responses API by default. Create an API key in the
+OpenAI Platform dashboard, export it in the shell that launches the app, and
+start Grok Build:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+./grok-openai
+```
+
+The launcher removes the key while Cargo builds, then restores it for the
+application runtime. Common terminal, MCP, LSP, and hook subprocesses remove
+accidental inherited copies of `OPENAI_API_KEY`; login-shell commands also
+unset it after shell startup. This is not a hard same-user security boundary:
+a process may still read any credential file its operating-system user can
+read. Do not put the literal key in the repository or in shell startup files
+the agent can access. Prefer per-launch export or secret-manager injection and
+a least-privilege key.
+
+The fork does not include a key or write `OPENAI_API_KEY` into the repository.
+A ChatGPT subscription, browser session, or ChatGPT login token is not an
+OpenAI Platform API key. API usage is billed separately through the OpenAI
+Platform account.
+
+If the variable is missing, startup fails closed with a setup message instead
+of falling through to xAI browser login. You can choose GPT-5.6, GPT-5.6 Terra,
+or GPT-5.6 Luna with `/model`.
+
+The sections below document the inherited upstream xAI and enterprise auth
+features. They are retained for compatibility with custom configurations, but
+they are not required for the bundled OpenAI profiles.
+
 Grok supports several authentication methods, including interactive browser login, enterprise single sign-on (SSO), and headless CI/CD runners.
 
 ---
 
-## Browser Login (Default)
+## Inherited xAI Browser Login (Custom xAI Models Only)
 
-On first launch, Grok opens your browser to authenticate with grok.com:
+This is not the default for the bundled OpenAI profiles. An intentionally
+configured xAI model can still open a browser to authenticate with grok.com:
 
 ```bash
 grok

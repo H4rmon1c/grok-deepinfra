@@ -101,7 +101,7 @@ dump_bash_state() {
   _emit "$PWD"
 
   local env_vars
-  env_vars=$(builtin export -p 2>/dev/null | command grep -viE '_proxy=|GROK_SANDBOX|GROK_AGENT=|SUDO_ASKPASS|GROK_ASKPASS|ELECTRON_RUN_AS_NODE|SSH_AUTH_SOCK|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR|WAYLAND_DISPLAY|GPG_TTY' || true)
+  env_vars=$(builtin export -p 2>/dev/null | command grep -viE '_proxy=|OPENAI_API_KEY|GROK_SANDBOX|GROK_AGENT=|SUDO_ASKPASS|GROK_ASKPASS|ELECTRON_RUN_AS_NODE|SSH_AUTH_SOCK|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR|WAYLAND_DISPLAY|GPG_TTY' || true)
   _emit_encoded "$env_vars" "ENV_VARS_B64"
 
   # errexit/pipefail here are this function's own `set -euo pipefail` (set is
@@ -157,7 +157,7 @@ function dump_zsh_state() {
   _emit "$PWD"
 
   local env_vars
-  env_vars=$(builtin typeset -xp 2>/dev/null | command grep -viE '_proxy=|GROK_SANDBOX|GROK_AGENT=|SUDO_ASKPASS|GROK_ASKPASS|ELECTRON_RUN_AS_NODE|SSH_AUTH_SOCK|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR|WAYLAND_DISPLAY|GPG_TTY' || true)
+  env_vars=$(builtin typeset -xp 2>/dev/null | command grep -viE '_proxy=|OPENAI_API_KEY|GROK_SANDBOX|GROK_AGENT=|SUDO_ASKPASS|GROK_ASKPASS|ELECTRON_RUN_AS_NODE|SSH_AUTH_SOCK|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR|WAYLAND_DISPLAY|GPG_TTY' || true)
   _emit_encoded "$env_vars" "ENV_VARS_B64"
 
   # errreturn/pipefail here are this function's own `emulate -L` options
@@ -314,6 +314,7 @@ impl ShellState {
         }
         crate::util::apply_shell_environment_policy(&mut cmd, shell_env_policy);
         cmd.envs(crate::util::pager_env());
+        crate::util::scrub_openai_api_key(&mut cmd);
         #[allow(clippy::disallowed_methods)] // one-shot init run, waited on here
         let mut child = cmd.spawn().map_err(|e| {
             crate::computer::types::ComputerError::io(format!(
@@ -444,6 +445,7 @@ impl ShellState {
                 "{dump_script} \
                  snap=$(command cat <&3) && builtin shopt -s extglob && builtin eval -- \"$snap\" && \
                  {{ builtin set +u 2>/dev/null || true; \
+                 builtin unset OPENAI_API_KEY 2>/dev/null; \
                  builtin export GROK_AGENT=1; \
                  builtin export PWD=\"$(builtin pwd)\"; \
                  builtin shopt -s expand_aliases 2>/dev/null; {sudo_inject}{search_inject}\
@@ -464,6 +466,7 @@ impl ShellState {
                  builtin eval \"$snap\" && \
                  {{ builtin unsetopt nounset 2>/dev/null || true; \
                  builtin setopt nonomatch 2>/dev/null || true; \
+                 builtin unset OPENAI_API_KEY 2>/dev/null; \
                  builtin export GROK_AGENT=1; \
                  builtin export PWD=\"$(builtin pwd)\"; \
                  builtin setopt aliases 2>/dev/null; {sudo_inject}{search_inject}\
@@ -1205,6 +1208,39 @@ mod tests {
             stdout.contains("ENV_CLEAN") && !stdout.contains("LEAKED_TO_ENV"),
             "temp var must not be exported to child processes under allexport, got: {stdout:?}"
         );
+    }
+
+    /// A persistent login snapshot is evaluated after the OS child environment
+    /// is built. It must not be able to restore the sampler credential, while
+    /// ordinary shell state continues to replay.
+    #[tokio::test]
+    async fn persistent_snapshot_cannot_restore_openai_key() {
+        if !bash_available() {
+            return;
+        }
+        let mut state = ShellState {
+            cwd: std::env::current_dir().unwrap(),
+            snapshot: "export OPENAI_API_KEY='snapshot-secret'\nexport GROK_TEST_SAFE_ENV='kept'\n"
+                .to_string(),
+            shell: ShellKind::Bash,
+        };
+
+        let (code, stdout) = run_command(
+            &mut state,
+            "printf '%s|%s' \"${OPENAI_API_KEY-unset}\" \"$GROK_TEST_SAFE_ENV\"",
+        )
+        .await;
+
+        assert_eq!(code, 0);
+        assert_eq!(stdout, "unset|kept");
+
+        let (second_code, second_stdout) = run_command(
+            &mut state,
+            "printf '%s|%s' \"${OPENAI_API_KEY-unset}\" \"$GROK_TEST_SAFE_ENV\"",
+        )
+        .await;
+        assert_eq!(second_code, 0);
+        assert_eq!(second_stdout, "unset|kept");
     }
 
     /// Same as the bash variant: zsh's `source`/`.` also inherits the caller's

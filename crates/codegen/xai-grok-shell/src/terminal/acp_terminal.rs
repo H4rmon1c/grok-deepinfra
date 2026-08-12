@@ -18,8 +18,9 @@ impl AsyncTerminalRunner for AcpTerminalRunner {
         // raw command avoids the /bin/bash dependency.
         #[cfg(unix)]
         let command = {
+            let scrubbed_command = format!("unset OPENAI_API_KEY; {}", request.command);
             let quoted =
-                shlex::try_quote(&request.command).map_err(|_| TerminalError::CommandNotQuoted)?;
+                shlex::try_quote(&scrubbed_command).map_err(|_| TerminalError::CommandNotQuoted)?;
             format!("{} -lc {}", super::default_shell_path(), quoted)
         };
         #[cfg(not(unix))]
@@ -30,9 +31,7 @@ impl AsyncTerminalRunner for AcpTerminalRunner {
                 acp::CreateTerminalRequest::new(session_id.clone(), command)
                     .args(vec![])
                     .env(
-                        request
-                            .env
-                            .into_iter()
+                        super::scrub_sampler_credentials_from_env(request.env)
                             .map(|(name, value)| acp::EnvVariable::new(name, value))
                             .collect::<Vec<_>>(),
                     )

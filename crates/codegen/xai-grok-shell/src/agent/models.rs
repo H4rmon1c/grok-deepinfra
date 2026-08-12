@@ -325,7 +325,11 @@ impl ModelsManager {
             .is_some_and(|a| a.is_session_auth());
         let fetch_auth = ModelFetchAuth::resolve(&cfg.endpoints, has_session);
         let mut cached_etag = None;
+        let remote_fetch_enabled = crate::util::config::resolve_remote_fetch_enabled();
         let prefetched_models = prefetched_models.or_else(|| {
+            if !remote_fetch_enabled {
+                return None;
+            }
             let cache = ModelsCacheManager::new();
             cache
                 .load_fresh(

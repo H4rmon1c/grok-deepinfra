@@ -780,8 +780,12 @@ impl SessionActor {
         let request = ConversationRequest {
             items,
             tools: vec![],
-            model: Some("grok-build".to_owned()),
-            temperature: Some(0.3),
+            // Let the prepared client apply the active model. Hard-coding the
+            // removed upstream slug breaks this auxiliary call on OpenAI.
+            model: None,
+            // Reasoning Responses models may reject temperature/top_p; leave
+            // those controls and effort unset for cross-provider compatibility.
+            temperature: None,
             max_output_tokens: Some(1024),
             ..Default::default()
         };

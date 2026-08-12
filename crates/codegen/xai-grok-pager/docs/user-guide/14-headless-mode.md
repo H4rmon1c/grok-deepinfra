@@ -21,7 +21,7 @@ Grok processes the prompt, runs any necessary tools, and prints the result to st
 | Flag                    | Description                                           |
 | ----------------------- | ----------------------------------------------------- |
 | `-p, --single <PROMPT>` | The prompt to send (or use `--prompt-json` / `--prompt-file`) |
-| `-m, --model <MODEL>`   | Model to use (e.g., `grok-build`)              |
+| `-m, --model <MODEL>`   | Model to use (e.g., `gpt-5.6-terra`)              |
 | `-s, --session-id <ID>` | Create a **new** session with this **UUID** (errors if invalid UUID or already in use under the target session directory; does not resume, use `-r`/`-c`) |
 | `--fork-session`        | With `-r`/`-c`, fork into a new session ID instead of appending to the original |
 | `-r, --resume <ID_OR_TITLE>` | Resume an existing session by ID, or by title for the current directory, ignoring letter case (a sole manually renamed match wins among duplicates; remaining duplicates error with their IDs; UUID-shaped values always take the ID path; scripts should prefer IDs) |
@@ -255,8 +255,8 @@ The `system`/`init` and terminal `result` lines carry metadata. Grok emits the f
 The stream opens with a `system`/`init` line, then `assistant` messages whose `message.content[]` holds `text`, `thinking`, and `tool_use` blocks, `user` messages carrying `tool_result` blocks, and a terminal `result`:
 
 ```json
-{"type":"system","subtype":"init","session_id":"abc123","apiKeySource":"user","model":"grok-build","cwd":"/repo","permissionMode":"default","tools":["read_file","bash"],"slash_commands":["review"],"mcp_servers":[{"name":"linear","status":"connected"}],"skills":[],"uuid":"..."}
-{"type":"assistant","message":{"id":"msg_0","type":"message","role":"assistant","model":"grok-build","content":[{"type":"text","text":"Let me read the file."},{"type":"tool_use","id":"call_1","name":"read_file","input":{"path":"src/main.rs"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{...}},"parent_tool_use_id":null,"session_id":"abc123","uuid":"..."}
+{"type":"system","subtype":"init","session_id":"abc123","apiKeySource":"user","model":"gpt-5.6","cwd":"/repo","permissionMode":"default","tools":["read_file","bash"],"slash_commands":["review"],"mcp_servers":[{"name":"linear","status":"connected"}],"skills":[],"uuid":"..."}
+{"type":"assistant","message":{"id":"msg_0","type":"message","role":"assistant","model":"gpt-5.6","content":[{"type":"text","text":"Let me read the file."},{"type":"tool_use","id":"call_1","name":"read_file","input":{"path":"src/main.rs"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{...}},"parent_tool_use_id":null,"session_id":"abc123","uuid":"..."}
 {"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_1","content":"fn main() {}","is_error":false}]},"parent_tool_use_id":null,"session_id":"abc123","uuid":"..."}
 {"type":"result","subtype":"success","is_error":false,"duration_ms":0,"duration_api_ms":0,"num_turns":7,"result":"Here's a summary...","stop_reason":"end_turn","total_cost_usd":0.0127,"usage":{"input_tokens":812,"output_tokens":210,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"server_tool_use":{"web_search_requests":0}},"modelUsage":{},"session_id":"abc123","uuid":"..."}
 ```
@@ -457,7 +457,7 @@ class GrokChat:
                 "--output-format", "streaming-json" if stream else "json",
                 "--yolo"]
 
-    async def create(self, messages, model="grok-build", stream=False):
+    async def create(self, messages, model="gpt-5.6", stream=False):
         prompt = messages[-1]["content"] if len(messages) == 1 else "\n".join(
             f"{m['role']}: {m['content']}" for m in messages
         )
@@ -542,16 +542,17 @@ Key environment variables that affect headless mode:
 
 | Variable                        | Description                                                   |
 | ------------------------------- | ------------------------------------------------------------- |
-| `XAI_API_KEY`        | API key for authentication (required when no browser login)   |
-| `GROK_HOME`                    | Override config directory (default: `~/.grok`)                |
+| `OPENAI_API_KEY`               | OpenAI Platform API key for the bundled models                |
+| `GROK_HOME`                    | Override config directory (`./grok-openai` defaults to `~/.grok-openai`) |
 | `GROK_LOG_FILE`                | Path to a log file (used verbatim as the path; works in headless and TUI, honors `RUST_LOG`) |
 | `RUST_LOG`                     | Log level filter (e.g. `debug`). Headless logs to stderr.     |
 
-For CI environments without browser access, set `XAI_API_KEY` with an API key from [console.x.ai](https://console.x.ai):
+For CI, provide an OpenAI Platform API key through the secret store and run the
+fork launcher. A ChatGPT login or subscription is not an API key:
 
 ```bash
-export XAI_API_KEY="xai-..."
-grok -p "Run the test suite" --yolo
+export OPENAI_API_KEY="sk-..."
+./grok-openai -p "Run the test suite" --yolo
 ```
 
 ---
@@ -569,14 +570,10 @@ grok -p "Run the test suite" --yolo
 
 ## Authentication for Headless Environments
 
-For headless use, authenticate with one of:
-
-- **`XAI_API_KEY`**: simplest for CI. See [Environment Variables](#environment-variables-for-headless) above.
-- **`grok login --device-auth`** (or `--device-code`): no browser needed on the target machine.
-  See [Authentication > Device Code Flow](02-authentication.md#device-code-flow).
-- **`grok login`**: browser-based OAuth2 on machines with a GUI.
-
-If you've previously logged in, cached credentials are used automatically.
+The bundled GPT profiles require `OPENAI_API_KEY`. A cached xAI login, device
+code flow, or `XAI_API_KEY` is never substituted when that variable is missing.
+Custom models can declare a different `env_key` in `config.toml`; see
+[Custom Models](11-custom-models.md).
 
 ---
 
@@ -603,7 +600,8 @@ the scope small.
 
 ## File Locations
 
-Grok stores data in `~/.grok` (override with `GROK_HOME`; see [Environment Variables for Headless](#environment-variables-for-headless)):
+The launcher stores fork data in `~/.grok-openai` (override with `GROK_HOME`;
+manual launches retain the upstream `~/.grok` default):
 
 | Path                     | Contents                              |
 | ------------------------ | ------------------------------------- |
@@ -620,38 +618,27 @@ Grok stores data in `~/.grok` (override with `GROK_HOME`; see [Environment Varia
 | `trace-exports/`         | Session trace exports                 |
 | `worktrees/`             | Git worktree metadata                 |
 
-### Read-Only `~/.grok`
+### Read-Only `GROK_HOME`
 
-For containers or CI, mount `~/.grok` read-only:
+For containers or CI, mount `GROK_HOME` read-only if session persistence is not needed:
 
-- Pre-populate `auth.json` or use `XAI_API_KEY`
+- Supply `OPENAI_API_KEY` through the process environment or CI secret store
 - Session persistence fails silently (ephemeral)
-- Update checks log a warning and skip
+- Upstream binary updates remain disabled
 
 ```bash
-export XAI_API_KEY="xai-..."
-export GROK_DISABLE_AUTOUPDATER=1
-grok -p "..." --no-auto-update
+export OPENAI_API_KEY="sk-..."
+./grok-openai -p "..."
 ```
 
 ---
 
-## Update Check Suppression
+## Update Checks
 
-| Method                          | Scope     |
-| ------------------------------- | --------- |
-| `--no-auto-update`              | Session   |
-| `GROK_DISABLE_AUTOUPDATER=1`    | Process   |
-| Non-TTY stderr (auto-detected)  | Automatic |
-| `[cli] auto_update = false`     | Persistent|
-
-`GROK_DISABLE_AUTOUPDATER` set to a falsy value (`0`, `false`, `off`, `no`, or empty, any
-case) counts as not set. The agent SDKs
-inject `GROK_DISABLE_AUTOUPDATER=1` for the non-leader agents they spawn (a falsy value in
-the SDK's isolation env keeps updates on), and the stdio agent skips its background update
-unless it runs from the managed install (`$GROK_HOME/bin/grok`).
-
-Update messages go to **stderr**. Stdout stays clean for `--output-format json`. See also [Environment Variables for Headless](#environment-variables-for-headless).
+The fork hard-disables the inherited upstream binary updater because it installs
+official Grok builds and would replace the OpenAI fork. Update through Git and
+rebuild. The inherited `--no-auto-update`, `GROK_DISABLE_AUTOUPDATER`, and
+`[cli] auto_update` controls remain accepted for command-line/config compatibility.
 
 ---
 

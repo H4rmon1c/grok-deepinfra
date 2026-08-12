@@ -19,8 +19,10 @@ You know enough to be productive. When you want more:
   where it's going.
 - Automate anything: `grok -p "summarize new TODOs" --output-format json`
   runs headless — great for scripts and CI.
-- Stay current with `grok update`; see what changed with `/release-notes`.
-- Something feel off? `/feedback` goes straight to the team.
+- Stay current by pulling the fork with Git and rebuilding; the inherited
+  upstream binary updater is disabled.
+- `/feedback` targets the upstream Grok team. Report fork-specific issues to
+  the maintainer of the Git fork you cloned.
 
 ## Reopen this tutorial
 

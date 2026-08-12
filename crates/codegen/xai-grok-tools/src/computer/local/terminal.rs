@@ -2949,6 +2949,7 @@ fn login_env_var_excluded(key: &str) -> bool {
             | "_"
             | "TERM"
             | "GROK_AGENT"
+            | "OPENAI_API_KEY"
             | "SUDO_ASKPASS"
             | "GROK_ASKPASS"
             | "ELECTRON_RUN_AS_NODE"
@@ -3005,6 +3006,7 @@ async fn capture_login_env() -> HashMap<String, String> {
             .kill_on_drop(true);
         crate::util::detach_command(&mut cmd);
         cmd.envs(crate::util::pager_env());
+        crate::util::scrub_openai_api_key(&mut cmd);
         #[allow(clippy::disallowed_methods)] // probe killed on drop
         let mut child = cmd.spawn().ok()?;
 
@@ -3133,13 +3135,17 @@ fn apply_child_env(
     // 1. Base env: cleared and rebuilt from the policy only when one is active.
     crate::util::shell_env_policy::install_policy_base_env(cmd, active_policy);
     // 2. Login-shell capture (filtered). 3. Grok control vars. 4. Request env
-    // (filtered). 5. Pager vars. 6. Login PATH last. 7. Agent marker wins.
+    // (filtered). 5. Pager vars. 6. Login PATH. 7. Agent marker. 8. Credential
+    // scrub is the final, non-overridable layer.
     layer_login_env_vars(cmd, login_env, active_policy);
     cmd.envs(shell_state::shell_env_overrides());
     layer_request_env(cmd, request_env, active_policy);
     cmd.envs(crate::util::pager_env());
     layer_login_path(cmd, login_env, active_policy);
     crate::util::apply_grok_agent_marker(cmd);
+    // Security boundary: credentials are consumed by the sampler process, not
+    // agent-controlled commands. This must remain after every env layer.
+    crate::util::scrub_openai_api_key(cmd);
 }
 
 /// Spawn the shell command and attach the child to a [`ProcessGroup`] for
@@ -3220,8 +3226,9 @@ fn spawn_shell_command(
             .kill_on_drop(true);
 
         // Policy base first (cleared + rebuilt only when a policy is active), then
-        // the shell-invocation env, the filtered request env, pager vars, and the
-        // agent marker last. Mirrors the unix ordering in `apply_child_env`;
+        // the shell-invocation env, the filtered request env, pager vars, the
+        // agent marker, then the credential scrub. Mirrors the unix ordering
+        // in `apply_child_env`;
         // `inv.env` is grok's trusted shell setup, so it is not filtered.
         let active_policy = shell_env_policy.filter(|p| !p.is_noop());
         crate::util::shell_env_policy::install_policy_base_env(&mut cmd, active_policy);
@@ -3229,6 +3236,7 @@ fn spawn_shell_command(
         layer_request_env(&mut cmd, env, active_policy);
         cmd.envs(crate::util::pager_env());
         crate::util::apply_grok_agent_marker(&mut cmd);
+        crate::util::scrub_openai_api_key(&mut cmd);
 
         // Set creation flags inline rather than via crate::util::detach_command
         // + new_process_group: tokio's creation_flags is a SET, not OR, so
@@ -3441,17 +3449,31 @@ mod tests {
 
         let policy = ShellEnvironmentPolicy {
             exclude: vec![EnvironmentVariablePattern::new_case_insensitive("*SECRET*")],
-            set: HashMap::from([("GROK_TEST_BASE".to_string(), "1".to_string())]),
+            set: HashMap::from([
+                ("GROK_TEST_BASE".to_string(), "1".to_string()),
+                (
+                    crate::util::OPENAI_API_KEY_ENV.to_string(),
+                    "config-secret".to_string(),
+                ),
+            ]),
             ..Default::default()
         };
         let login = HashMap::from([
             ("GROK_TEST_LOGIN".to_string(), "l".to_string()),
             ("PATH".to_string(), "/login/bin".to_string()),
+            (
+                crate::util::OPENAI_API_KEY_ENV.to_string(),
+                "login-secret".to_string(),
+            ),
         ]);
         let request = HashMap::from([
             ("GROK_TEST_REQ".to_string(), "r".to_string()),
             ("PATH".to_string(), "/req/bin".to_string()),
             ("GROK_TEST_SECRET".to_string(), "s".to_string()),
+            (
+                crate::util::OPENAI_API_KEY_ENV.to_string(),
+                "request-secret".to_string(),
+            ),
         ]);
 
         let mut cmd = tokio::process::Command::new("true");
@@ -3469,6 +3491,16 @@ mod tests {
         assert!(!env.contains_key("GROK_TEST_SECRET"));
         // Login PATH is applied last and wins over the request PATH.
         assert_eq!(env.get("PATH").map(String::as_str), Some("/login/bin"));
+        // The sampler-only credential is scrubbed after config, login, and
+        // request layers, while benign variables above remain intact.
+        assert!(!env.contains_key(crate::util::OPENAI_API_KEY_ENV));
+        assert_eq!(
+            cmd.as_std()
+                .get_envs()
+                .find(|(key, _)| { *key == std::ffi::OsStr::new(crate::util::OPENAI_API_KEY_ENV) })
+                .map(|(_, value)| value),
+            Some(None)
+        );
         // The agent marker wins over every layer.
         assert_eq!(
             env.get(crate::util::GROK_AGENT_ENV).map(String::as_str),
@@ -4982,6 +5014,7 @@ mod tests {
                       PWD=/somewhere\0\
                       SHLVL=2\0\
                       GPG_TTY=/dev/ttys001\0\
+                      OPENAI_API_KEY=login-secret\0\
                       http_proxy=http://p:3128\0\x01";
         let (path, env) = parse_login_env_capture(stdout);
         assert_eq!(path.as_deref(), Some("/opt/rc/bin:/usr/bin"));
@@ -4994,7 +5027,14 @@ mod tests {
             Some("/Users/u/.config/gh")
         );
         assert_eq!(env.get("MULTILINE").map(String::as_str), Some("a\nb"));
-        for excluded in ["PATH", "PWD", "SHLVL", "GPG_TTY", "http_proxy"] {
+        for excluded in [
+            "PATH",
+            "PWD",
+            "SHLVL",
+            "GPG_TTY",
+            crate::util::OPENAI_API_KEY_ENV,
+            "http_proxy",
+        ] {
             assert!(
                 !env.contains_key(excluded),
                 "{excluded} must be filtered from the captured login env"

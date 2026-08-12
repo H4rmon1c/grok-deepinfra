@@ -70,16 +70,16 @@ fn prefetch_models_blocking_gated(
     fetch_auth: ModelFetchAuth,
     remote_fetch_enabled: bool,
 ) -> Option<IndexMap<String, ModelEntry>> {
+    if !remote_fetch_enabled {
+        tracing::info!("models fetch/cache skipped: remote_fetch disabled");
+        return None;
+    }
+
     let cache_auth = fetch_auth.cache_auth_method();
     let cache_origin = crate::remote::models_list_url(endpoints, fetch_auth);
     let cache = ModelsCacheManager::new();
     if let Some(cached) = cache.load_fresh(&cache_auth, &cache_origin) {
         return Some(cached.models);
-    }
-
-    if !remote_fetch_enabled {
-        tracing::info!("models fetch skipped: remote_fetch disabled");
-        return None;
     }
 
     let _timer = crate::instrumentation_timer!("startup.fetch_models_blocking");

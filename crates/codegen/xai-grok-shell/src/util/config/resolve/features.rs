@@ -30,7 +30,7 @@ pub fn resolve_zdr_access_enabled(
 ///
 /// Precedence: requirements (MDM > system > user) > managed
 /// (`managed_config.toml` > system managed) > user `config.toml` > default
-/// (true). Callable before an `AgentConfig` exists (startup prefetch runs
+/// (false in the OpenAI-first fork). Callable before an `AgentConfig` exists (startup prefetch runs
 /// pre-agent), so it re-reads the config layers like
 /// `managed_config::is_fetch_enabled`.
 ///
@@ -44,7 +44,8 @@ pub fn resolve_remote_fetch_enabled() -> bool {
         // independently (requirements soft-fail per layer; the managed loaders
         // are the same ones ConfigLayers::load uses) — a corrupt user-writable
         // config.toml must not disarm a requirements or managed-layer pin.
-        // Fail open only when policy is genuinely absent.
+        // Keep the fork's offline/bundled-catalog default when policy is
+        // genuinely absent.
         Err(_) => remote_fetch_enabled_from_policy_layers(
             crate::config::load_merged_requirements().as_ref(),
             crate::config::load_managed_config().ok().as_ref(),
@@ -90,7 +91,7 @@ fn remote_fetch_enabled_from_layers(layers: &crate::config::ConfigLayers) -> boo
     .into_iter()
     .flatten()
     .find_map(remote_fetch_value)
-    .unwrap_or(true)
+    .unwrap_or(false)
 }
 
 /// Err-arm fallback for [`resolve_remote_fetch_enabled`]: the independently
@@ -98,7 +99,7 @@ fn remote_fetch_enabled_from_layers(layers: &crate::config::ConfigLayers) -> boo
 /// (`load_merged_requirements` merges user, system, MDM with last-wins,
 /// matching the walk), then the managed tiers — so a root-owned or synced
 /// managed-only pin also survives a corrupt user layer. The user `config.toml`
-/// tier stays fail-open: it is a preference, not deployment policy. Mirrors
+/// tier stays at the fork's disabled default on parse failure. Mirrors
 /// the `auto_permission_mode_enabled_from_disk` soft-fail precedent.
 fn remote_fetch_enabled_from_policy_layers(
     merged_requirements: Option<&TomlValue>,
@@ -109,7 +110,7 @@ fn remote_fetch_enabled_from_policy_layers(
         .into_iter()
         .flatten()
         .find_map(remote_fetch_value)
-        .unwrap_or(true)
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -134,8 +135,8 @@ mod tests {
     }
 
     #[test]
-    fn remote_fetch_defaults_to_true_when_absent() {
-        assert!(remote_fetch_enabled_from_layers(&empty_layers()));
+    fn remote_fetch_defaults_to_false_when_absent() {
+        assert!(!remote_fetch_enabled_from_layers(&empty_layers()));
     }
 
     #[test]
@@ -257,8 +258,8 @@ mod tests {
             Some(&on)
         ));
         assert!(
-            remote_fetch_enabled_from_policy_layers(None, None, None),
-            "genuinely absent policy fails open"
+            !remote_fetch_enabled_from_policy_layers(None, None, None),
+            "genuinely absent policy keeps the bundled OpenAI catalog isolated"
         );
     }
 }

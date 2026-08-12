@@ -912,6 +912,7 @@ fn spawn_with_argv(
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
+            xai_grok_tools::util::scrub_openai_api_key(cmd);
 
             #[cfg(target_os = "linux")]
             if xai_grok_sandbox::should_restrict_child_network() {
@@ -939,6 +940,7 @@ fn spawn_with_argv(
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
+            xai_grok_tools::util::scrub_openai_api_key(cmd);
         });
         // CreationFlags must precede JobObject per process-wrap docs.
         cmd.wrap(CreationFlags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW));
@@ -1248,6 +1250,31 @@ mod tests {
         let statuses = extract_statuses(&notifier.notifications.lock().await);
         assert!(statuses.contains(&acp::ToolCallStatus::InProgress));
         assert!(statuses.contains(&acp::ToolCallStatus::Completed));
+    }
+
+    #[tokio::test]
+    async fn test_streaming_child_env_scrubs_openai_key_but_keeps_benign_override() {
+        let notifier = Arc::new(TestNotifier {
+            notifications: Mutex::new(vec![]),
+        });
+        let runner = StreamingLocalTerminalRunner {
+            notifier,
+            session_id: acp::SessionId::new("env-scrub-session"),
+        };
+        let mut request = make_request(
+            "env-scrub-tool",
+            "printf '%s|%s' \"${OPENAI_API_KEY-unset}\" \"$GROK_TEST_SAFE_ENV\"",
+        );
+        request
+            .env
+            .insert("OPENAI_API_KEY".to_string(), "request-secret".to_string());
+        request
+            .env
+            .insert("GROK_TEST_SAFE_ENV".to_string(), "kept".to_string());
+
+        let result = runner.run(request).await.unwrap();
+
+        assert_eq!(result.combined_output.trim(), "unset|kept");
     }
 
     #[tokio::test]

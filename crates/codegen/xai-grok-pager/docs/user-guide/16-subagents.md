@@ -243,7 +243,7 @@ explore = true                       # default -- omit to keep enabled
 plan = false                         # disable the plan subagent
 
 [subagents.models]
-explore = "grok-build"               # route explore to a specific model
+explore = "gpt-5.6-luna"             # route explore to a lower-cost bundled model
 ```
 
 Per-type model overrides apply for any parent. Without an override, a subagent inherits the parent's model.
@@ -256,7 +256,7 @@ Define custom roles with their own capability and model defaults:
 [subagents.roles.researcher]
 description = "Deep research agent"
 default_capability_mode = "read-only"
-model = "grok-build"
+model = "gpt-5.6-terra"
 prompt_file = ".grok/prompts/researcher.md"
 ```
 
