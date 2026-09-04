@@ -147,6 +147,39 @@ fn deserialize_response_event(data: &str) -> Result<rs::ResponseStreamEvent> {
     Ok(event)
 }
 
+/// Decode one Responses API SSE frame.
+///
+/// OpenAI-compatible transports can emit liveness-only `keepalive` frames.
+/// They are not semantic Responses API events, and `async-openai` has no
+/// matching `ResponseStreamEvent` variant. Filter both wire shapes seen in
+/// practice before strict typed deserialization:
+///
+/// - a named SSE event (`event: keepalive`), and
+/// - a data-only event (`data: {"type":"keepalive"}`).
+///
+/// Unknown non-keepalive event types still reach the strict decoder and fail
+/// visibly instead of being silently discarded.
+fn decode_response_sse_event(
+    event_name: &str,
+    data: &str,
+) -> Option<Result<rs::ResponseStreamEvent>> {
+    if is_response_keepalive_event(event_name, data) {
+        return None;
+    }
+
+    Some(deserialize_response_event(data))
+}
+
+fn is_response_keepalive_event(event_name: &str, data: &str) -> bool {
+    if event_name == "keepalive" {
+        return true;
+    }
+
+    serde_json::from_str::<serde_json::Value>(data).is_ok_and(|value| {
+        value.get("type").and_then(serde_json::Value::as_str) == Some("keepalive")
+    })
+}
+
 /// On terminal Responses API events (`response.completed` /
 /// `response.incomplete`), rewrite `response.usage.total_tokens` to the
 /// live context length when the wire includes
@@ -1525,7 +1558,7 @@ impl SamplingClient {
                         } else if let Some(stream_error) = try_parse_stream_error(data) {
                             Some(Some(Err(stream_error)))
                         } else {
-                            Some(Some(deserialize_response_event(data)))
+                            Some(decode_response_sse_event(&event.event, data))
                         }
                     }
                     Err(e) => {
@@ -3067,6 +3100,31 @@ mod tests {
         assert!(matches!(
             event,
             rs::ResponseStreamEvent::ResponseOutputTextDelta(_)
+        ));
+    }
+
+    #[test]
+    fn response_keepalive_frames_are_swallowed_before_typed_deserialization() {
+        assert!(decode_response_sse_event("keepalive", "{}").is_none());
+        assert!(decode_response_sse_event("message", r#"{"type":"keepalive"}"#).is_none());
+        assert!(
+            decode_response_sse_event("message", r#"{"type":"keepalive","sequence_number":17}"#,)
+                .is_none()
+        );
+
+        // Keep the exception narrow: nested values, similar names, and
+        // ordinary Responses events are not transport keepalives.
+        assert!(!is_response_keepalive_event(
+            "message",
+            r#"{"metadata":{"type":"keepalive"}}"#,
+        ));
+        assert!(!is_response_keepalive_event(
+            "message",
+            r#"{"type":"response.keepalive"}"#,
+        ));
+        assert!(!is_response_keepalive_event(
+            "message",
+            r#"{"type":"response.output_text.delta"}"#,
         ));
     }
 }
