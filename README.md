@@ -87,12 +87,12 @@ printf "%s\n" \
   "#!/usr/bin/env bash" \
   "set -euo pipefail" \
   "set +x" \
-  "export GROK_HOME=\"${GROK_HOME:-$HOME/.grok-deepinfra}\"" \
-  "source \"$HOME/.config/grok-deepinfra/env\"" \
-  ": \"${DEEPINFRA_API_TOKEN:?DeepInfra API token is not configured}\"" \
+  'export GROK_HOME="${GROK_HOME:-$HOME/.grok-deepinfra}"' \
+  'source "$HOME/.config/grok-deepinfra/env"' \
+  ': "${DEEPINFRA_API_TOKEN:?DeepInfra API token is not configured}"' \
   "unset GROK_MODELS_BASE_URL GROK_MODELS_LIST_URL" \
   "export GROK_DISABLE_AUTOUPDATER=1" \
-  "exec \"$HOME/.local/libexec/grok-deepinfra/grok\" \"$@\"" \
+  'exec "$HOME/.local/libexec/grok-deepinfra/grok" "$@"' \
   > "$HOME/.local/bin/grok-deepinfra"
 ```
 
